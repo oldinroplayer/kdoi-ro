@@ -12,10 +12,62 @@
     <div id="hud" hidden>
       <div class="hud-card">
         <div id="hud-name"></div>
-        <div id="hud-pos"></div>
+        <div id="hud-level" class="hud-sub"></div>
+        <div id="hp-bar" class="bar hp" role="meter" aria-label="HP" aria-valuemin="0">
+          <div class="bar-fill"></div>
+          <span class="bar-text"></span>
+        </div>
+        <div id="sp-bar" class="bar sp" role="meter" aria-label="SP" aria-valuemin="0">
+          <div class="bar-fill"></div>
+          <span class="bar-text"></span>
+        </div>
+        <div id="base-exp" class="bar exp" role="meter" aria-label="Base EXP" aria-valuemin="0">
+          <div class="bar-fill"></div>
+          <span class="bar-text"></span>
+        </div>
+        <div id="job-exp" class="bar exp job" role="meter" aria-label="Job EXP" aria-valuemin="0">
+          <div class="bar-fill"></div>
+          <span class="bar-text"></span>
+        </div>
+        <div class="hud-row">
+          <span id="hud-pos" class="hud-sub"></span>
+          <span id="hud-zeny" class="hud-zeny"></span>
+        </div>
       </div>
-      <div class="hud-hint">Left-click to walk · Right-drag to rotate · Wheel to zoom</div>
+      <div class="hud-right">
+      <div class="hud-menu">
+        <button id="menu-button" class="menu-button" type="button" aria-haspopup="menu" aria-expanded="false"
+                aria-controls="menu" title="Menu (Esc)">
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+            <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          Menu
+        </button>
+        <div id="menu" class="menu" role="menu" hidden>
+          <button id="menu-inventory" type="button" role="menuitem">Inventory <kbd>Alt+E</kbd></button>
+          <button id="menu-equipment" type="button" role="menuitem">Equipment <kbd>Alt+Q</kbd></button>
+          <button id="menu-status" type="button" role="menuitem">Status <kbd>Alt+A</kbd></button>
+          <button id="menu-sound" type="button" role="menuitem">Sound</button>
+          <hr />
+          <button id="logout-button" type="button" role="menuitem">Log out</button>
+        </div>
+      </div>
+      <div id="minimap"></div>
+      </div>
+      <div class="hud-hint">Click to walk, talk or attack · F1 uses a potion · Right-drag to rotate · Wheel to zoom · Esc for menu</div>
     </div>
+
+    <div id="death" class="death" role="alertdialog" aria-labelledby="death-title" hidden>
+      <div class="panel death-panel">
+        <h2 id="death-title">You have been knocked out</h2>
+        <p class="subtitle">You'll wake up in Morroc with half your HP.</p>
+        <button id="respawn-button" type="button">Return to Save Point</button>
+      </div>
+    </div>
+
+    <div id="windows"></div>
+    <div id="tooltip" role="tooltip" hidden></div>
+    <div id="toasts" aria-live="polite"></div>
 
     <div id="status" hidden></div>
 

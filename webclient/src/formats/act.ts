@@ -17,6 +17,8 @@ export interface ActLayer {
 export interface ActFrame {
   layers: ActLayer[];
   anchors: { x: number; y: number }[];
+  /** Index into Act.sounds played when this frame shows, or -1. */
+  sound: number;
 }
 
 export interface ActAction {
@@ -26,6 +28,8 @@ export interface ActAction {
 
 export interface Act {
   actions: ActAction[];
+  /** Sound file names (under data/wav/) that frames refer to. */
+  sounds: string[];
 }
 
 export function parseAct(buf: ArrayBuffer): Act {
@@ -61,7 +65,7 @@ export function parseAct(buf: ArrayBuffer): Act {
         }
         layers.push({ x, y, sprite, mirror, color, scaleX, scaleY, rotation, type });
       }
-      if (v >= ver(2, 0)) r.i32(); // sound event id
+      const sound = v >= ver(2, 0) ? r.i32() : -1;
       const anchors: ActFrame["anchors"] = [];
       if (v >= ver(2, 3)) {
         const n = r.i32();
@@ -71,18 +75,19 @@ export function parseAct(buf: ArrayBuffer): Act {
           r.skip(4);
         }
       }
-      frames.push({ layers, anchors });
+      frames.push({ layers, anchors, sound });
     }
     actions.push({ frames, delay: 150 });
   }
 
+  const sounds: string[] = [];
   if (v >= ver(2, 1)) {
-    const sounds = r.i32();
-    r.skip(sounds * 40);
+    const n = r.i32();
+    for (let i = 0; i < n; i++) sounds.push(r.str(40));
   }
   if (v >= ver(2, 2)) {
     // Frame interval per action, in units of 25 ms.
     for (const a of actions) a.delay = r.f32() * 25;
   }
-  return { actions };
+  return { actions, sounds };
 }

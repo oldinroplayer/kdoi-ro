@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 
 	"kdoiro/server/internal/account"
+	"kdoiro/server/internal/game"
 	"kdoiro/server/internal/proto"
 	"kdoiro/server/internal/world"
 )
@@ -111,13 +112,13 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 	sess.log.Info("joined")
 
 	defer func() {
-		mapName, x, y, ok := s.world.Leave(id)
+		data, ok := s.world.Leave(id)
 		if ok {
-			if err := s.store.SavePosition(char.Name, mapName, x, y); err != nil {
-				sess.log.Error("save position", "err", err)
+			if err := s.store.Save(char.Name, data); err != nil {
+				sess.log.Error("save character", "err", err)
 			}
 		}
-		sess.log.Info("left", "map", mapName, "x", x, "y", y)
+		sess.log.Info("left", "map", data.Map, "x", data.X, "y", data.Y, "zeny", data.Zeny)
 	}()
 
 	go sess.writeLoop(ctx)
@@ -132,12 +133,31 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 		case *proto.Move:
 			if now := time.Now(); now.Sub(lastMove) >= minMoveInterval {
 				lastMove = now
-				if err := s.world.Move(id, int(p.X), int(p.Y)); err != nil {
-					return websocket.StatusGoingAway, "server shutting down"
-				}
+				err = s.world.Move(id, int(p.X), int(p.Y))
 			}
+		case *proto.NpcClick:
+			err = s.world.ClickNpc(id, p.NpcID)
+		case *proto.ShopBuy:
+			err = s.world.Buy(id, p.NpcID, p.Lines)
+		case *proto.Equip:
+			err = s.world.Equip(id, int(p.Index))
+		case *proto.Unequip:
+			err = s.world.Unequip(id, int(p.Index))
+		case *proto.StatusUp:
+			err = s.world.RaiseStat(id, int(p.Stat))
+		case *proto.Attack:
+			err = s.world.Attack(id, p.TargetID)
+		case *proto.UseItem:
+			err = s.world.UseItem(id, int(p.Index))
+		case *proto.Respawn:
+			err = s.world.Respawn(id)
+		case *proto.ShopSell:
+			err = s.world.Sell(id, p.NpcID, p.Lines)
 		default:
 			return websocket.StatusPolicyViolation, "unexpected packet"
+		}
+		if err != nil {
+			return websocket.StatusGoingAway, "server shutting down"
 		}
 	}
 }
@@ -148,7 +168,7 @@ func (s *Server) login(ctx context.Context, sess *session) (account.Character, u
 	lctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	defer cancel()
 
-	template := account.Character{Job: 0 /* Novice */, Map: s.spawn.Map, X: s.spawn.X, Y: s.spawn.Y}
+	start := game.NewChar(s.spawn.Map, s.spawn.X, s.spawn.Y)
 	for range maxLoginAttempts {
 		pkt, err := readPacket(lctx, sess.conn)
 		if err != nil {
@@ -160,7 +180,7 @@ func (s *Server) login(ctx context.Context, sess *session) (account.Character, u
 			return account.Character{}, 0, websocket.StatusPolicyViolation, "login first"
 		}
 
-		char, created, err := s.store.Authenticate(login.Name, login.Password, template)
+		char, created, err := s.store.Authenticate(login.Name, login.Password, start)
 		if err != nil {
 			code := loginCode(err)
 			if code == proto.LoginServerError {
@@ -172,13 +192,13 @@ func (s *Server) login(ctx context.Context, sess *session) (account.Character, u
 			continue
 		}
 
-		mapName, x, y := char.Map, char.X, char.Y
-		if !s.world.HasMap(mapName) {
-			mapName, x, y = s.spawn.Map, s.spawn.X, s.spawn.Y
+		data := char.CharData
+		if !s.world.HasMap(data.Map) {
+			data.Map, data.X, data.Y = s.spawn.Map, s.spawn.X, s.spawn.Y
 		}
 		// Join queues EnterMap into the outbox; LoginResult is written
 		// directly below, before writeLoop starts, so it arrives first.
-		id, err := s.world.Join(char.Name, char.Job, mapName, x, y, sess)
+		id, err := s.world.Join(char.Name, data, sess)
 		if err != nil {
 			code := loginCode(err)
 			if code == proto.LoginServerError {

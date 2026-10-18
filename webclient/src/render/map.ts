@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { fetchData } from "../assets";
 import { parseGat, type Gat } from "../formats/gat";
 import { parseGnd } from "../formats/gnd";
-import { parseRsw, type Rsw } from "../formats/rsw";
+import { parseRsw, type Rsw, type RswSound } from "../formats/rsw";
 import { buildGround } from "./ground";
 import type { SceneLight } from "./material";
 import { clearModelCache, createInstance } from "./models";
@@ -18,6 +18,8 @@ export interface MapView {
   /** RO space, rotated 180° about X: RO (x, y-down, z-north) -> three (x, y-up, -z). */
   root: THREE.Group;
   ground: THREE.Mesh[];
+  /** Ambient sounds with positions in RO space (same units as cells × CELL). */
+  sounds: (RswSound & { x: number; z: number })[];
   update(timeMs: number): void;
   dispose(): void;
 }
@@ -62,11 +64,14 @@ export async function loadMap(name: string, onProgress?: (msg: string) => void):
   const water = await buildWater(rsw, gnd.width * gnd.zoom, gnd.height * gnd.zoom);
   root.add(water.mesh);
 
+  const sounds = rsw.sounds.map((s) => ({ ...s, x: s.position[0] + center[0], z: s.position[2] + center[1] }));
+
   return {
     name,
     gat,
     root,
     ground,
+    sounds,
     update: water.update,
     dispose() {
       root.traverse((o) => {

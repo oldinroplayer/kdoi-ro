@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"kdoiro/server/internal/game"
 )
 
 var (
@@ -28,11 +30,9 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9_]{4,23}$`)
 type Character struct {
 	Name         string    `json:"name"`
 	PasswordHash []byte    `json:"password_hash"`
-	Job          uint16    `json:"job"`
-	Map          string    `json:"map"`
-	X            int       `json:"x"`
-	Y            int       `json:"y"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Embedded so job/map/x/y stay top-level fields in the saved JSON.
+	game.CharData
 }
 
 type Store struct {
@@ -56,14 +56,15 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	for _, c := range list {
+		c.FillDefaults() // characters saved before stats/zeny/inventory existed
 		s.chars[strings.ToLower(c.Name)] = c
 	}
 	return s, nil
 }
 
-// Authenticate logs into the named character, creating it from template
-// (with Name and password filled in) if the name is free.
-func (s *Store) Authenticate(name, password string, template Character) (c Character, created bool, err error) {
+// Authenticate logs into the named character, creating it with the given
+// starting data if the name is free.
+func (s *Store) Authenticate(name, password string, start game.CharData) (c Character, created bool, err error) {
 	if !namePattern.MatchString(name) {
 		return Character{}, false, ErrInvalidName
 	}
@@ -77,6 +78,7 @@ func (s *Store) Authenticate(name, password string, template Character) (c Chara
 	var snapshot Character
 	if ok {
 		snapshot = *existing
+		snapshot.Inventory = append([]game.InvItem(nil), existing.Inventory...)
 	}
 	s.mu.Unlock()
 
@@ -92,10 +94,7 @@ func (s *Store) Authenticate(name, password string, template Character) (c Chara
 	if err != nil {
 		return Character{}, false, err
 	}
-	nc := template
-	nc.Name = name
-	nc.PasswordHash = hash
-	nc.CreatedAt = time.Now().UTC()
+	nc := Character{Name: name, PasswordHash: hash, CreatedAt: time.Now().UTC(), CharData: start}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -111,15 +110,15 @@ func (s *Store) Authenticate(name, password string, template Character) (c Chara
 	return nc, true, nil
 }
 
-// SavePosition records where a character logged out.
-func (s *Store) SavePosition(name, mapName string, x, y int) error {
+// Save records a character's state (position, stats, zeny, inventory).
+func (s *Store) Save(name string, data game.CharData) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.chars[strings.ToLower(name)]
 	if !ok {
 		return fmt.Errorf("unknown character %q", name)
 	}
-	c.Map, c.X, c.Y = mapName, x, y
+	c.CharData = data
 	return s.saveLocked()
 }
 

@@ -26,7 +26,7 @@ func TestDecodeErrors(t *testing.T) {
 		"unknown":       NewPacket(0x7777).Bytes(),
 		"short move":    NewPacket(OpMove).U16(1).Bytes(),
 		"short string":  append(NewPacket(OpLogin).Bytes(), 10, 'a'),
-		"server opcode": PlayerDisappear(1),
+		"server opcode": PlayerDisappear(1, GoneOut),
 	} {
 		if _, err := Decode(b); err == nil {
 			t.Errorf("%s: expected error", name)

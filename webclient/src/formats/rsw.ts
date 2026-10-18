@@ -9,10 +9,20 @@ export interface RswModel {
   scale: [number, number, number];
 }
 
+/** An ambient sound placed on the map, replayed every `cycle` seconds in range. */
+export interface RswSound {
+  file: string;
+  position: [number, number, number];
+  volume: number;
+  range: number;
+  cycle: number;
+}
+
 export interface Rsw {
   water: { level: number; type: number; waveHeight: number; waveSpeed: number; wavePitch: number; animSpeed: number };
   light: { longitude: number; latitude: number; diffuse: [number, number, number]; ambient: [number, number, number]; opacity: number };
   models: RswModel[];
+  sounds: RswSound[];
 }
 
 export function parseRsw(buf: ArrayBuffer): Rsw {
@@ -44,6 +54,7 @@ export function parseRsw(buf: ArrayBuffer): Rsw {
   r.skip(16); // ground bounds
 
   const models: RswModel[] = [];
+  const sounds: RswSound[] = [];
   const count = r.i32();
   for (let i = 0; i < count; i++) {
     const type = r.i32();
@@ -61,9 +72,17 @@ export function parseRsw(buf: ArrayBuffer): Rsw {
       case 2: // light: name, pos, color, range
         r.skip(80 + 12 + 12 + 4);
         break;
-      case 3: // sound: name, file, pos, vol, w, h, range, cycle (2.0+)
-        r.skip(80 + 80 + 12 + 4 + 4 + 4 + 4 + (v >= ver(2, 0) ? 4 : 0));
+      case 3: {
+        r.str(80); // name
+        const file = r.str(80);
+        const position = r.vec3();
+        const volume = r.f32();
+        r.skip(8); // width, height
+        const range = r.f32();
+        const cycle = v >= ver(2, 0) ? r.f32() : 4;
+        sounds.push({ file, position, volume, range, cycle });
         break;
+      }
       case 4: // effect: name, pos, id, delay, params
         r.skip(80 + 12 + 4 + 4 + 16);
         break;
@@ -71,5 +90,5 @@ export function parseRsw(buf: ArrayBuffer): Rsw {
         throw new Error(`unknown RSW object type ${type} at index ${i}`);
     }
   }
-  return { water, light, models };
+  return { water, light, models, sounds };
 }

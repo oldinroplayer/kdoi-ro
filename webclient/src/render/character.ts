@@ -1,9 +1,11 @@
 // Character sprites: body + head + shadow composited on a canvas shown on a
 // camera-facing billboard, like the original client's 2D-in-3D characters.
+// Names are drawn separately as screen-space labels (see labels.ts).
 import * as THREE from "three";
 import { fetchData } from "../assets";
 import { parseAct, type Act, type ActFrame } from "../formats/act";
 import { parseSpr } from "../formats/spr";
+import type { Look } from "../net";
 
 /** World units per sprite pixel. */
 export const SPRITE_SCALE = 1 / 7;
@@ -13,9 +15,14 @@ const CANVAS = 256;
 const FOOT_X = 128;
 const FOOT_Y = 176;
 
-/** Animation state; the ACT action index is state * 8 + direction. */
-export const State = { Idle: 0, Walk: 1 } as const;
-export type State = (typeof State)[keyof typeof State];
+/**
+ * Player ACT action groups; the action index is group * 8 + direction.
+ * Weapons and shields only have frames in Ready (battle stance) and attacks.
+ */
+export const PlayerAction = { Idle: 0, Walk: 1, Ready: 4, Attack: 10, Hurt: 6, Dead: 8 } as const;
+
+/** Monster ACT action groups. */
+export const MonsterAction = { Idle: 0, Walk: 1, Attack: 2, Hurt: 3, Die: 4 } as const;
 
 interface SpriteSet {
   act: Act;
@@ -23,7 +30,19 @@ interface SpriteSet {
   rgba: HTMLCanvasElement[];
 }
 
-async function loadSpriteSet(path: string): Promise<SpriteSet> {
+const spriteSets = new Map<string, Promise<SpriteSet>>();
+
+function loadSpriteSet(path: string): Promise<SpriteSet> {
+  let p = spriteSets.get(path);
+  if (!p) {
+    p = fetchSpriteSet(path);
+    p.catch(() => spriteSets.delete(path)); // allow a retry after a failed load
+    spriteSets.set(path, p);
+  }
+  return p;
+}
+
+async function fetchSpriteSet(path: string): Promise<SpriteSet> {
   const [sprBuf, actBuf] = await Promise.all([fetchData(`${path}.spr`), fetchData(`${path}.act`)]);
   const spr = parseSpr(sprBuf);
   const toCanvas = (img: { width: number; height: number; rgba: Uint8ClampedArray }) => {
@@ -40,7 +59,7 @@ async function loadSpriteSet(path: string): Promise<SpriteSet> {
 
 export interface CharacterAssets {
   body: SpriteSet;
-  head: SpriteSet;
+  head?: SpriteSet; // players have a separate head; NPC sprites are one piece
   shadow: SpriteSet;
 }
 
@@ -56,20 +75,71 @@ export function loadNoviceAssets(): Promise<CharacterAssets> {
   return novice;
 }
 
+const oneSpriteAssets = new Map<string, Promise<CharacterAssets>>();
+
+/** A single-sprite unit (NPC or monster) with a shadow. */
+function loadOneSprite(path: string): Promise<CharacterAssets> {
+  let p = oneSpriteAssets.get(path);
+  if (!p) {
+    p = Promise.all([loadSpriteSet(path), loadSpriteSet("sprite/shadow")]).then(([body, shadow]) => ({ body, shadow }));
+    oneSpriteAssets.set(path, p);
+  }
+  return p;
+}
+
+/** An NPC sprite from data/sprite/npc/. */
+export const loadNpcAssets = (sprite: string) => loadOneSprite(`sprite/npc/${sprite}`);
+
+/** A monster sprite from data/sprite/몬스터/. */
+export const loadMonsterAssets = (sprite: string) => loadOneSprite(`sprite/몬스터/${sprite}`);
+
+/** Sprite layers for visible equipment (male Novice for now). */
+export interface EquipLayers {
+  weapon?: SpriteSet;
+  shield?: SpriteSet;
+  headgear: SpriteSet[];
+}
+
+export const noEquipment: EquipLayers = { headgear: [] };
+
+/**
+ * Loads the sprites for a look. spriteOf maps an item ID to its sprite name
+ * (from the item database); items without one, or missing files, are skipped.
+ */
+export async function loadEquipLayers(look: Look, spriteOf: (itemId: number) => string | undefined): Promise<EquipLayers> {
+  const load = async (itemId: number, path: (name: string) => string) => {
+    const name = itemId ? spriteOf(itemId) : undefined;
+    if (!name) return undefined;
+    try {
+      return await loadSpriteSet(path(name));
+    } catch (err) {
+      console.warn("equipment sprite missing", itemId, name, err);
+      return undefined;
+    }
+  };
+  const [weapon, shield, top, mid, low] = await Promise.all([
+    load(look.weapon, (n) => `sprite/인간족/초보자/초보자_남_${n}`),
+    load(look.shield, (n) => `sprite/방패/초보자/초보자_남_${n}`),
+    load(look.headTop, (n) => `sprite/악세사리/남/남_${n}`),
+    load(look.headMid, (n) => `sprite/악세사리/남/남_${n}`),
+    load(look.headLow, (n) => `sprite/악세사리/남/남_${n}`),
+  ]);
+  // RO draws lower, then middle, then upper headgear.
+  return { weapon, shield, headgear: [low, mid, top].filter((s): s is SpriteSet => !!s) };
+}
+
 export class CharacterSprite {
   readonly object: THREE.Mesh;
-  private readonly canvas = document.createElement("canvas");
+  /** The composited frame; also usable as a 2D preview (e.g. the equipment window). */
+  readonly canvas = document.createElement("canvas");
   private readonly ctx: CanvasRenderingContext2D;
   private readonly texture: THREE.CanvasTexture;
   private drawn = "";
+  private equipment: EquipLayers = noEquipment;
 
-  constructor(
-    private readonly assets: CharacterAssets,
-    private readonly name: string,
-    private readonly isSelf: boolean,
-  ) {
+  constructor(private readonly assets: CharacterAssets) {
     this.canvas.width = this.canvas.height = CANVAS;
-    this.ctx = this.canvas.getContext("2d")!;
+    this.ctx = this.canvas.getContext("2d", { willReadFrequently: true })!;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.magFilter = THREE.NearestFilter;
@@ -85,20 +155,36 @@ export class CharacterSprite {
     this.object.renderOrder = 2;
   }
 
-  /** Frame length in ms for the current state, scaled by walk speed (150 = normal). */
-  frameDelay(state: State, speed: number): number {
-    const action = this.assets.body.act.actions[state * 8];
-    const base = action?.delay ?? 150;
-    return state === State.Walk ? (base * speed) / 150 : base;
+  /** Frame length in ms of an action group. */
+  frameDelay(group: number): number {
+    return this.assets.body.act.actions[group * 8]?.delay || 150;
   }
 
-  frameCount(state: State): number {
-    return this.assets.body.act.actions[state * 8]?.frames.length ?? 1;
+  frameCount(group: number): number {
+    return this.assets.body.act.actions[group * 8]?.frames.length ?? 1;
   }
 
-  /** dir is the sprite direction (0 = facing camera, clockwise). */
-  draw(state: State, dir: number, frame: number): void {
-    const key = `${state}:${dir}:${frame}`;
+  /** Total length of an action group's animation in ms. */
+  duration(group: number): number {
+    return this.frameDelay(group) * this.frameCount(group);
+  }
+
+  /** The sound a body frame plays when shown (from the ACT), if any. */
+  frameSound(group: number, dir: number, frame: number): string | null {
+    const act = this.assets.body.act;
+    const action = act.actions[group * 8 + dir];
+    const f = action?.frames[frame % Math.max(1, action.frames.length)];
+    return f && f.sound >= 0 ? (act.sounds[f.sound] ?? null) : null;
+  }
+
+  setEquipment(layers: EquipLayers): void {
+    this.equipment = layers;
+    this.drawn = ""; // force a redraw
+  }
+
+  /** dir is the sprite direction (0 = facing camera, clockwise); frame wraps. */
+  draw(group: number, dir: number, frame: number): void {
+    const key = `${group}:${dir}:${frame}`;
     if (key === this.drawn) return;
     this.drawn = key;
 
@@ -109,29 +195,43 @@ export class CharacterSprite {
     const shadowFrame = shadow.act.actions[0]?.frames[0];
     if (shadowFrame) drawFrame(ctx, shadow, shadowFrame, 0, 0);
 
-    const bodyAction = body.act.actions[state * 8 + dir];
-    // Idle frames choose the head's facing; always look straight ahead.
-    const bodyFrame = bodyAction?.frames[state === State.Idle ? 0 : frame % bodyAction.frames.length];
+    const frameOf = (set: SpriteSet | undefined) => {
+      const action = set?.act.actions[group * 8 + dir];
+      return action?.frames[frame % Math.max(1, action.frames.length)];
+    };
+    const { weapon, shield, headgear } = this.equipment;
+    // Facing away (west through north-east), the shield arm is behind the body.
+    const shieldBehind = dir >= 2 && dir <= 5;
+    const shieldFrame = frameOf(shield);
+    if (shield && shieldFrame && shieldBehind) drawFrame(ctx, shield, shieldFrame, 0, 0);
+
+    const bodyFrame = frameOf(body);
     if (bodyFrame) drawFrame(ctx, body, bodyFrame, 0, 0);
 
-    const headAction = head.act.actions[state * 8 + dir];
-    const headFrame = headAction?.frames[state === State.Idle ? 0 : frame % headAction.frames.length];
-    if (headFrame && bodyFrame) {
+    // Head and headgear hang off the body's anchor point.
+    const anchored = (set: SpriteSet | undefined) => {
+      const f = frameOf(set);
+      if (!set || !f || !bodyFrame) return;
       const ba = bodyFrame.anchors[0] ?? { x: 0, y: 0 };
-      const ha = headFrame.anchors[0] ?? { x: 0, y: 0 };
-      drawFrame(ctx, head, headFrame, ba.x - ha.x, ba.y - ha.y);
-    }
+      const a = f.anchors[0] ?? { x: 0, y: 0 };
+      drawFrame(ctx, set, f, ba.x - a.x, ba.y - a.y);
+    };
+    anchored(head);
+    for (const hg of headgear) anchored(hg);
 
-    ctx.font = "bold 12px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(0,0,0,0.85)";
-    ctx.fillStyle = this.isSelf ? "#ffffff" : "#e8f0ff";
-    ctx.strokeText(this.name, FOOT_X, FOOT_Y + 12);
-    ctx.fillText(this.name, FOOT_X, FOOT_Y + 12);
+    const weaponFrame = frameOf(weapon);
+    if (weapon && weaponFrame) drawFrame(ctx, weapon, weaponFrame, 0, 0);
+    if (shield && shieldFrame && !shieldBehind) drawFrame(ctx, shield, shieldFrame, 0, 0);
 
     this.texture.needsUpdate = true;
+  }
+
+  /** Whether the pixel under a plane UV (from a raycast hit) is opaque. */
+  hitTest(uv: THREE.Vector2): boolean {
+    const x = Math.floor(uv.x * CANVAS);
+    const y = Math.floor((1 - uv.y) * CANVAS);
+    if (x < 0 || y < 0 || x >= CANVAS || y >= CANVAS) return false;
+    return this.ctx.getImageData(x, y, 1, 1).data[3] > 32;
   }
 
   dispose(): void {

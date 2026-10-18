@@ -114,6 +114,44 @@ def map_dependencies(f, index, map_name):
     return needed
 
 
+def extract_entries(f, entries, out_dir):
+    """Writes entries under out_dir (keeping their data\\... paths).
+
+    Returns (extracted, skipped, failed) counts.
+    """
+    out_root = os.path.abspath(out_dir)
+    done = skipped = failed = 0
+    for i, entry in enumerate(entries, 1):
+        name, _, _, real, flags, _ = entry
+        if not flags & FLAG_FILE:
+            continue  # directory entry
+        if flags & FLAG_ENCRYPTED:
+            skipped += 1
+            print(f"skip (encrypted): {name}", file=sys.stderr)
+            continue
+
+        rel = name.replace("\\", "/").lstrip("/")
+        path = os.path.normpath(os.path.join(out_root, rel))
+        if not path.startswith(out_root + os.sep):
+            failed += 1
+            print(f"skip (unsafe path): {name}", file=sys.stderr)
+            continue
+
+        data = read_entry(f, entry)
+        if len(data) != real:
+            failed += 1
+            print(f"size mismatch ({len(data)} != {real}): {name}", file=sys.stderr)
+            continue
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as out:
+            out.write(data)
+        done += 1
+        if i % 2000 == 0:
+            print(f"  {i}/{len(entries)}", file=sys.stderr)
+    return done, skipped, failed
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("grf")
@@ -143,36 +181,7 @@ def main():
                 print(f"{real:>10}  {flags:#04x}  {name}")
             return
 
-        out_root = os.path.abspath(args.out_dir)
-        done = skipped = failed = 0
-        for i, entry in enumerate(entries, 1):
-            name, _, _, real, flags, _ = entry
-            if not flags & FLAG_FILE:
-                continue  # directory entry
-            if flags & FLAG_ENCRYPTED:
-                skipped += 1
-                print(f"skip (encrypted): {name}", file=sys.stderr)
-                continue
-
-            rel = name.replace("\\", "/").lstrip("/")
-            path = os.path.normpath(os.path.join(out_root, rel))
-            if not path.startswith(out_root + os.sep):
-                failed += 1
-                print(f"skip (unsafe path): {name}", file=sys.stderr)
-                continue
-
-            data = read_entry(f, entry)
-            if len(data) != real:
-                failed += 1
-                print(f"size mismatch ({len(data)} != {real}): {name}", file=sys.stderr)
-                continue
-
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "wb") as out:
-                out.write(data)
-            done += 1
-            if i % 2000 == 0:
-                print(f"  {i}/{len(entries)}", file=sys.stderr)
+        done, skipped, failed = extract_entries(f, entries, args.out_dir)
 
     print(f"extracted {done}, skipped {skipped}, failed {failed}")
 
