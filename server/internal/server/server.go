@@ -1,0 +1,250 @@
+// Package server accepts WebSocket connections and runs one session per client.
+package server
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/coder/websocket"
+
+	"kdoiro/server/internal/account"
+	"kdoiro/server/internal/proto"
+	"kdoiro/server/internal/world"
+)
+
+const (
+	readLimit        = 1024
+	loginTimeout     = 30 * time.Second
+	maxLoginAttempts = 5
+	writeTimeout     = 10 * time.Second
+	outboxSize       = 256
+	minMoveInterval  = 100 * time.Millisecond
+)
+
+// Spawn is where new characters (and characters on unknown maps) appear.
+type Spawn struct {
+	Map  string
+	X, Y int
+}
+
+type Server struct {
+	ctx            context.Context // cancelling it ends every session
+	store          *account.Store
+	world          *world.World
+	spawn          Spawn
+	originPatterns []string
+	wg             sync.WaitGroup
+}
+
+// New creates a server. originPatterns lists allowed browser origins
+// (host patterns such as "localhost:*"); same-origin is always allowed.
+func New(ctx context.Context, store *account.Store, w *world.World, spawn Spawn, originPatterns []string) *Server {
+	return &Server{ctx: ctx, store: store, world: w, spawn: spawn, originPatterns: originPatterns}
+}
+
+// Wait blocks until every session has ended and saved its character.
+func (s *Server) Wait() { s.wg.Wait() }
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Add before Accept hijacks the connection, so http.Server.Shutdown
+	// can't return before this session is counted.
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: s.originPatterns})
+	if err != nil {
+		return
+	}
+	conn.SetReadLimit(readLimit)
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+
+	sess := &session{conn: conn, out: make(chan []byte, outboxSize), cancel: cancel, log: slog.With("remote", r.RemoteAddr)}
+	status, reason := s.run(ctx, sess)
+	conn.Close(status, reason)
+}
+
+type session struct {
+	conn   *websocket.Conn
+	out    chan []byte
+	cancel context.CancelFunc
+	log    *slog.Logger
+}
+
+// Send queues a packet; a client too slow to keep up is disconnected.
+func (sess *session) Send(packet []byte) {
+	select {
+	case sess.out <- packet:
+	default:
+		sess.log.Warn("outbox full, disconnecting")
+		sess.cancel()
+	}
+}
+
+func (sess *session) writeLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case packet := <-sess.out:
+			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+			err := sess.conn.Write(wctx, websocket.MessageBinary, packet)
+			cancel()
+			if err != nil {
+				sess.cancel()
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, string) {
+	char, id, status, reason := s.login(ctx, sess)
+	if id == 0 {
+		return status, reason
+	}
+	sess.log = sess.log.With("char", char.Name, "id", id)
+	sess.log.Info("joined")
+
+	defer func() {
+		mapName, x, y, ok := s.world.Leave(id)
+		if ok {
+			if err := s.store.SavePosition(char.Name, mapName, x, y); err != nil {
+				sess.log.Error("save position", "err", err)
+			}
+		}
+		sess.log.Info("left", "map", mapName, "x", x, "y", y)
+	}()
+
+	go sess.writeLoop(ctx)
+
+	var lastMove time.Time
+	for {
+		pkt, err := readPacket(ctx, sess.conn)
+		if err != nil {
+			return statusFor(err)
+		}
+		switch p := pkt.(type) {
+		case *proto.Move:
+			if now := time.Now(); now.Sub(lastMove) >= minMoveInterval {
+				lastMove = now
+				if err := s.world.Move(id, int(p.X), int(p.Y)); err != nil {
+					return websocket.StatusGoingAway, "server shutting down"
+				}
+			}
+		default:
+			return websocket.StatusPolicyViolation, "unexpected packet"
+		}
+	}
+}
+
+// login reads Login packets until one succeeds and the character has joined
+// the world. It returns id 0 (plus a close status) on failure.
+func (s *Server) login(ctx context.Context, sess *session) (account.Character, uint32, websocket.StatusCode, string) {
+	lctx, cancel := context.WithTimeout(ctx, loginTimeout)
+	defer cancel()
+
+	template := account.Character{Job: 0 /* Novice */, Map: s.spawn.Map, X: s.spawn.X, Y: s.spawn.Y}
+	for range maxLoginAttempts {
+		pkt, err := readPacket(lctx, sess.conn)
+		if err != nil {
+			status, reason := statusFor(err)
+			return account.Character{}, 0, status, reason
+		}
+		login, ok := pkt.(*proto.Login)
+		if !ok {
+			return account.Character{}, 0, websocket.StatusPolicyViolation, "login first"
+		}
+
+		char, created, err := s.store.Authenticate(login.Name, login.Password, template)
+		if err != nil {
+			code := loginCode(err)
+			if code == proto.LoginServerError {
+				sess.log.Error("authenticate", "err", err)
+			}
+			if err := sess.conn.Write(lctx, websocket.MessageBinary, proto.LoginResult(code)); err != nil {
+				return account.Character{}, 0, websocket.StatusInternalError, "write failed"
+			}
+			continue
+		}
+
+		mapName, x, y := char.Map, char.X, char.Y
+		if !s.world.HasMap(mapName) {
+			mapName, x, y = s.spawn.Map, s.spawn.X, s.spawn.Y
+		}
+		// Join queues EnterMap into the outbox; LoginResult is written
+		// directly below, before writeLoop starts, so it arrives first.
+		id, err := s.world.Join(char.Name, char.Job, mapName, x, y, sess)
+		if err != nil {
+			code := loginCode(err)
+			if code == proto.LoginServerError {
+				sess.log.Error("join", "err", err)
+			}
+			if err := sess.conn.Write(lctx, websocket.MessageBinary, proto.LoginResult(code)); err != nil {
+				return account.Character{}, 0, websocket.StatusInternalError, "write failed"
+			}
+			continue
+		}
+
+		code := proto.LoginOK
+		if created {
+			code = proto.LoginCreated
+			sess.log.Info("character created", "char", char.Name)
+		}
+		if err := sess.conn.Write(lctx, websocket.MessageBinary, proto.LoginResult(code)); err != nil {
+			s.world.Leave(id)
+			return account.Character{}, 0, websocket.StatusInternalError, "write failed"
+		}
+		return char, id, 0, ""
+	}
+	return account.Character{}, 0, websocket.StatusPolicyViolation, "too many login attempts"
+}
+
+func readPacket(ctx context.Context, conn *websocket.Conn) (any, error) {
+	typ, data, err := conn.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if typ != websocket.MessageBinary {
+		return nil, errBadPacket
+	}
+	pkt, err := proto.Decode(data)
+	if err != nil {
+		return nil, errBadPacket
+	}
+	return pkt, nil
+}
+
+var errBadPacket = errors.New("malformed packet")
+
+func statusFor(err error) (websocket.StatusCode, string) {
+	switch {
+	case errors.Is(err, errBadPacket):
+		return websocket.StatusPolicyViolation, "malformed packet"
+	case errors.Is(err, context.DeadlineExceeded):
+		return websocket.StatusPolicyViolation, "login timeout"
+	case errors.Is(err, context.Canceled):
+		return websocket.StatusGoingAway, "server shutting down"
+	default:
+		return websocket.StatusNormalClosure, ""
+	}
+}
+
+func loginCode(err error) uint8 {
+	switch {
+	case errors.Is(err, account.ErrWrongPassword):
+		return proto.LoginWrongPassword
+	case errors.Is(err, account.ErrInvalidName):
+		return proto.LoginInvalidName
+	case errors.Is(err, account.ErrInvalidPassword):
+		return proto.LoginInvalidPassword
+	case errors.Is(err, world.ErrAlreadyOnline):
+		return proto.LoginAlreadyOnline
+	default:
+		return proto.LoginServerError
+	}
+}

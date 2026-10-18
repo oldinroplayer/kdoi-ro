@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KDoiRo</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="hud" hidden>
+      <div class="hud-card">
+        <div id="hud-name"></div>
+        <div id="hud-pos"></div>
+      </div>
+      <div class="hud-hint">Left-click to walk · Right-drag to rotate · Wheel to zoom</div>
+    </div>
+
+    <div id="status" hidden></div>
+
+    <div id="login" class="overlay">
+      <form id="login-form" class="panel" autocomplete="on">
+        <h1>KDoiRo</h1>
+        <p class="subtitle">Enter a character name. New names are created as a Novice in Morroc.</p>
+        <label>
+          Character name
+          <input id="name" name="username" autocomplete="username" required minlength="4" maxlength="23"
+                 pattern="[A-Za-z0-9_]+" title="4–23 letters, digits or underscores" />
+        </label>
+        <label>
+          Password
+          <input id="password" name="password" type="password" autocomplete="current-password" required
+                 minlength="4" maxlength="72" />
+        </label>
+        <details>
+          <summary>Server</summary>
+          <input id="server" value="ws://localhost:7000/ws" spellcheck="false" />
+        </details>
+        <p id="login-error" role="alert"></p>
+        <button id="login-button" type="submit">Enter Morroc</button>
+      </form>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
