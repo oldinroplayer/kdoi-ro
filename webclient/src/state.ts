@@ -6,9 +6,12 @@ import type { SkillDb } from "./skills";
 export interface ShopState {
   npcId: number;
   npcName: string;
-  items: { itemId: number; price: number }[];
+  /** element: a vendor's forged weapon's element (0 for ordinary items). */
+  items: { itemId: number; price: number; element: number }[];
   /** Percent of half price the shop pays for our items (Overcharge raises it). */
   sellRate: number;
+  /** A vending stall: it only sells. */
+  buyOnly: boolean;
 }
 
 /** A buff on our character: its level and when it wears off (performance.now() ms). */

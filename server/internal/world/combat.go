@@ -50,7 +50,7 @@ func (w *World) tickPlayer(p *Player, now time.Time) {
 	reach := p.data.Derive().Range
 
 	p.advance(now, func() bool {
-		if wp, ok := p.m.warpAt(p.x, p.y); ok {
+		if wp, ok := p.m.warpAt(p.x, p.y); ok && !p.fake { // fakes stay on their map
 			w.warp(p, wp)
 			return false
 		}
@@ -121,22 +121,27 @@ func (w *World) Sit(id uint32, sit bool) error {
 			p.out.Send(proto.Message("You need Basic Skill level 3 to sit."))
 			return
 		}
-		w.cancelCast(p)
-		p.sitting = sit
-		if sit {
-			p.target = 0
-			w.halt(&p.unit)
-			// Start the faster regen right away instead of waiting out a standing tick.
-			now := time.Now()
-			if next := now.Add(regenInterval(hpRegenInterval, true)); next.Before(p.nextHPRegen) {
-				p.nextHPRegen = next
-			}
-			if next := now.Add(regenInterval(spRegenInterval, true)); next.Before(p.nextSPRegen) {
-				p.nextSPRegen = next
-			}
-		}
-		w.broadcast(p.m, proto.PlayerSit(p.id, sit))
+		w.setSitting(p, sit)
 	})
+}
+
+// setSitting sits a player down or stands it up and tells the map.
+func (w *World) setSitting(p *Player, sit bool) {
+	w.cancelCast(p)
+	p.sitting = sit
+	if sit {
+		p.target = 0
+		w.halt(&p.unit)
+		// Start the faster regen right away instead of waiting out a standing tick.
+		now := time.Now()
+		if next := now.Add(regenInterval(hpRegenInterval, true)); next.Before(p.nextHPRegen) {
+			p.nextHPRegen = next
+		}
+		if next := now.Add(regenInterval(spRegenInterval, true)); next.Before(p.nextSPRegen) {
+			p.nextSPRegen = next
+		}
+	}
+	w.broadcast(p.m, proto.PlayerSit(p.id, sit))
 }
 
 // Turn faces a player in a direction without moving it (e.g. while sitting).
@@ -298,6 +303,9 @@ func (w *World) killPlayer(p *Player) {
 
 // giveExp grants EXP and announces level ups.
 func (w *World) giveExp(p *Player, base, job int) {
+	if p.fake {
+		return // fakes stay the level they were made
+	}
 	baseUps, jobUps := p.data.AddExp(base, job)
 	if baseUps > 0 {
 		w.broadcast(p.m, proto.LevelUp(p.id, proto.LevelBase))

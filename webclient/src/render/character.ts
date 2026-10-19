@@ -152,15 +152,17 @@ export interface CharacterAssets {
 }
 
 /** RO class ID -> the Korean name its sprites are filed under, and its English name. */
-const JOBS: [string, string][] = [
-  ["초보자", "Novice"],
-  ["검사", "Swordman"],
-  ["마법사", "Mage"],
-  ["궁수", "Archer"],
-  ["성직자", "Acolyte"],
-  ["상인", "Merchant"],
-  ["도둑", "Thief"],
-];
+const JOBS: Record<number, [string, string]> = {
+  0: ["초보자", "Novice"],
+  1: ["검사", "Swordman"],
+  2: ["마법사", "Mage"],
+  3: ["궁수", "Archer"],
+  4: ["성직자", "Acolyte"],
+  5: ["상인", "Merchant"],
+  6: ["도둑", "Thief"],
+  // Not playable yet: drawn for the vending stalls' Blacksmiths.
+  10: ["제철공", "Blacksmith"],
+};
 
 const jobFolder = (job: number) => (JOBS[job] ?? JOBS[0])[0];
 

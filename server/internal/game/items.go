@@ -12,6 +12,7 @@ const (
 	TypeEtc     ItemType = "etc"  // loot, only worth selling
 	TypeAmmo    ItemType = "ammo" // arrows: worn as a stack, one used per bow shot
 	TypeWarp    ItemType = "warp" // wings: Warp says where they take you
+	TypeCard    ItemType = "card" // compounded into a slot of equipment (CardLoc)
 )
 
 // Equip locations, as RO's bitmask.
@@ -54,6 +55,12 @@ type ItemDef struct {
 	Crit    int `json:"crit,omitempty"`
 	// Warp is where a wing takes its user: WarpRandom or WarpSavePoint.
 	Warp string `json:"warp,omitempty"`
+	// Slots is how many cards the equipment takes (0-4).
+	Slots int `json:"slots,omitempty"`
+	// CardLoc is the equipment a card goes into (an equip location mask, e.g.
+	// SlotHandR for weapon cards); Bonus is what it adds while worn.
+	CardLoc uint16 `json:"cardLoc,omitempty"`
+	Bonus   *Bonus `json:"-"`
 	// Sprite names the equipment's sprite layer, for items shown on the
 	// character (weapons, shields, headgear): e.g. "단검" for a weapon's
 	// 초보자_남_단검.spr. Empty for items that don't change the sprite.

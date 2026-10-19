@@ -15,6 +15,10 @@ func (c *CharData) statBonus() [NumStats]int {
 		b[DEX] += lv
 		b[INT] += lv
 	}
+	cards := c.cardBonus()
+	for i := range b {
+		b[i] += cards.Stats[i]
+	}
 	return b
 }
 

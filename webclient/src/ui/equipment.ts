@@ -99,8 +99,11 @@ export class EquipmentWindow {
     const text = document.createElement("span");
     text.className = "equip-name";
     if (worn && info) {
+      const fullName = this.state.items?.label(info.id, worn.cards, worn.element) ?? info.name;
       row.append(
         itemCell(info, worn.amount, {
+          name: fullName,
+          cards: info.slots ? { slots: info.slots, names: worn.cards.map((c) => this.state.items?.get(c)?.name ?? `Card ${c}`) } : undefined,
           label: `${label}: ${info.name}`,
           action: "take off",
           onActivate: () => {
@@ -110,7 +113,7 @@ export class EquipmentWindow {
         }),
       );
       // Arrows show how many are left.
-      text.textContent = mask === slots.ammo ? `${info.name} × ${worn.amount}` : info.name;
+      text.textContent = mask === slots.ammo ? `${info.name} × ${worn.amount}` : fullName;
     } else {
       const empty = document.createElement("div");
       empty.className = "item-cell empty";

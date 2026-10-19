@@ -10,12 +10,15 @@
     <canvas id="view"></canvas>
 
     <div id="hud" hidden>
-      <div class="hud-card">
+      <div id="hud-card" class="hud-card">
         <div class="hud-row">
           <div id="hud-name"></div>
           <span id="bot-badge" class="bot-badge" title="Auto attack is on (Alt+B to stop)" hidden>AUTO</span>
+          <button id="hud-mini" class="hud-mini" type="button" aria-pressed="false"
+                  aria-label="Minimize status (Alt+V)" title="Minimize (Alt+V)"></button>
         </div>
         <div id="hud-level" class="hud-sub"></div>
+        <div id="hud-exp-mini" class="hud-exp-mini"></div>
         <div id="hp-bar" class="bar hp" role="meter" aria-label="HP" aria-valuemin="0">
           <div class="bar-fill"></div>
           <span class="bar-text"></span>
@@ -63,6 +66,11 @@
         </div>
       </div>
       <div id="minimap"></div>
+      <div id="game-stats" class="server-stats in-game" aria-live="off" aria-label="Server">
+        <span class="stat-status"><span class="stat-dot" aria-hidden="true"></span><span class="stat-online">–</span></span>
+        <span class="stat"><span class="stat-label">EXP</span> <strong class="stat-exp">–</strong></span>
+        <span class="stat"><span class="stat-label">Drop</span> <strong class="stat-drop">–</strong></span>
+      </div>
       </div>
       <div id="chat" class="chat">
         <div class="chat-log" role="log" aria-live="polite" aria-label="Chat"></div>
@@ -93,9 +101,9 @@
         <h1>KDoiRo</h1>
         <p class="subtitle">Enter a character name. New names are created as a Novice outside Payon Cave.</p>
         <div id="server-stats" class="server-stats" aria-live="polite">
-          <span class="stat-status"><span class="stat-dot" aria-hidden="true"></span><span id="stat-online">Checking server…</span></span>
-          <span class="stat"><span class="stat-label">EXP</span> <strong id="stat-exp">–</strong></span>
-          <span class="stat"><span class="stat-label">Drop</span> <strong id="stat-drop">–</strong></span>
+          <span class="stat-status"><span class="stat-dot" aria-hidden="true"></span><span class="stat-online">Checking server…</span></span>
+          <span class="stat"><span class="stat-label">EXP</span> <strong class="stat-exp">–</strong></span>
+          <span class="stat"><span class="stat-label">Drop</span> <strong class="stat-drop">–</strong></span>
         </div>
         <label>
           Character name

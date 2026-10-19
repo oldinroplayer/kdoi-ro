@@ -21,6 +21,7 @@ const consoleHelp = `Commands:
   exprate [rate]             show or set the monster EXP rate: exprate 2 (or x2, 1.5...)
   droprate [rate]            show or set the monster drop rate the same way
   chatmode [server|local]    show or set who hears public chat: everyone online, or nearby
+  fakeplayers [on|off]       show or set fake players (15-20 per map with real players on it)
   update                     restart into a new build: players wait and come back by themselves
   help                       show this list`
 
@@ -181,6 +182,25 @@ func consoleCommand(line string, w *world.World, saved relocator) string {
 			return "error: " + err.Error()
 		}
 		return "Drop rate is now " + world.FormatRate(w.DropRate()) + " (until the server restarts; use -drop-rate to keep it)"
+	case "fakeplayers", "fakes":
+		if len(f) == 1 {
+			return "Fake players are " + onOff(w.FakePlayers())
+		}
+		var on bool
+		switch strings.ToLower(f[1]) {
+		case "on", "yes", "1":
+			on = true
+		case "off", "no", "0":
+		default:
+			return "usage: fakeplayers [on|off]"
+		}
+		if err := w.SetFakePlayers(on); err != nil {
+			return "error: " + err.Error()
+		}
+		if on {
+			return "Fake players are now on: 15-20 join each map that has real players on it."
+		}
+		return "Fake players are now off: they've all left."
 	case "chatmode":
 		if len(f) == 1 {
 			return "Chat mode is " + chatModeName(w.ServerChat())
@@ -210,4 +230,11 @@ func chatModeName(server bool) string {
 		return "server: public chat reaches everyone online"
 	}
 	return "local: public chat reaches players within 14 cells"
+}
+
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }

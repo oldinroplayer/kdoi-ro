@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -47,8 +48,10 @@ func TestCreateLoginAndPersist(t *testing.T) {
 	if err := s.Save("POring_1", c.CharData); err != nil {
 		t.Fatal(err)
 	}
-	// Saving again replaces the inventory rather than adding to it.
-	c.Inventory = c.Inventory[1:]
+	// Saving again replaces the inventory rather than adding to it, and keeps
+	// cards compounded into equipment.
+	c.Inventory = append(c.Inventory[1:], game.InvItem{Index: 5, ItemID: 1201, Amount: 1, Cards: []int{4001, 4002}},
+		game.InvItem{Index: 6, ItemID: 1207, Amount: 1, Element: game.ElemFire})
 	if err := s.Save("Poring_1", c.CharData); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +71,9 @@ func TestCreateLoginAndPersist(t *testing.T) {
 		got.Save != c.Save || got.CreatedAt.IsZero() {
 		t.Fatalf("after reopen: %+v", got)
 	}
-	if len(got.Inventory) != 1 || got.Inventory[0] != (game.InvItem{Index: 3, ItemID: 501, Amount: 12}) {
+	want := []game.InvItem{{Index: 3, ItemID: 501, Amount: 12}, {Index: 5, ItemID: 1201, Amount: 1, Cards: []int{4001, 4002}},
+		{Index: 6, ItemID: 1207, Amount: 1, Element: game.ElemFire}}
+	if !reflect.DeepEqual(got.Inventory, want) {
 		t.Fatalf("inventory: %+v", got.Inventory)
 	}
 	if len(got.Skills) != 2 || got.Skills[game.SkillDoubleAttack] != 4 {

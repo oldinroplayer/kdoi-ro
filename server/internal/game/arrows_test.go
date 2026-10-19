@@ -48,3 +48,19 @@ func TestArrows(t *testing.T) {
 		t.Fatalf("no arrows: %v", err)
 	}
 }
+
+func TestForgedWeaponElement(t *testing.T) {
+	c := NewChar("town", 1, 1)
+	c.BaseLevel = 10
+	c.Inventory = []InvItem{{Index: 0, ItemID: 1207, Amount: 1, Element: ElemFire}} // Fire Main Gauche
+	if err := c.Equip(0); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.attackElement(); got != ElemFire {
+		t.Fatalf("a Fire Main Gauche attacks with element %d, want fire", got)
+	}
+	c.Inventory[0].Element = ElemNeutral
+	if got := c.attackElement(); got != ElemNeutral {
+		t.Fatalf("an ordinary Main Gauche attacks with element %d", got)
+	}
+}

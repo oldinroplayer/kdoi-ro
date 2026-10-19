@@ -86,7 +86,7 @@ func (c *client) expectInventoryAfter() map[int]invEntry {
 			return false
 		}
 		for range int(r.U16()) {
-			e := invEntry{int(r.U16()), int(r.U16()), int(r.U16()), r.U16()}
+			e := readInvEntry(r)
 			byItem[e.itemID] = e
 		}
 		return true

@@ -11,7 +11,7 @@ const mapGrace = time.Minute
 
 // awake reports whether a map's monsters should run this tick.
 func (m *mapInstance) awake(now time.Time) bool {
-	return len(m.players) > 0 || now.Before(m.sleepAt)
+	return m.realPlayers() > 0 || now.Before(m.sleepAt)
 }
 
 // emptied starts a map's grace period when its last player leaves.
@@ -27,9 +27,11 @@ func (w *World) tickMaps(now time.Time) {
 				m.asleep = true
 				freeze(m)
 			}
+			w.tickFakes(m, now) // asleep: the fakes leave
 			continue
 		}
 		m.asleep = false
+		w.tickFakes(m, now)
 		for _, mob := range m.monsters {
 			w.tickMonster(mob, now)
 		}

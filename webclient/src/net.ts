@@ -78,7 +78,18 @@ export type ServerPacket =
   | { type: "portal"; x: number; y: number }
   | { type: "npc"; id: number; name: string; sprite: string; x: number; y: number; dir: number }
   /** sellRate: percent of half price the shop pays (more than 100 with Overcharge). */
-  | { type: "shopOpen"; npcId: number; npcName: string; items: { itemId: number; price: number }[]; sellRate: number }
+  | {
+      type: "shopOpen";
+      npcId: number;
+      npcName: string;
+      /** element: a vendor's forged weapon's element (0 for ordinary items). */
+      items: { itemId: number; price: number; element: number }[];
+      sellRate: number;
+      /** A vending stall: it sells, but doesn't buy. */
+      buyOnly: boolean;
+    }
+  /** A vending stall: an NPC drawn as a sitting character of a job, with its shop sign. */
+  | { type: "vendor"; id: number; name: string; title: string; job: number; x: number; y: number; dir: number; look: Look }
   | { type: "shopResult"; code: number }
   | { type: "inventory"; items: InvItem[] }
   | { type: "status"; status: Status }
@@ -161,6 +172,10 @@ export interface InvItem {
   amount: number;
   /** Equip slot bitmask it's worn in; 0 when not worn. */
   equip: number;
+  /** Cards compounded into it (item IDs). */
+  cards: number[];
+  /** A forged weapon's element (0 = none). */
+  element: number;
 }
 
 export interface Status {
@@ -343,15 +358,24 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
     case 0x8009: {
       const npcId = u32(), npcName = str(), n = u16();
       const items = [];
-      for (let i = 0; i < n; i++) items.push({ itemId: u16(), price: u32() });
-      return { type: "shopOpen", npcId, npcName, items, sellRate: u16() };
+      for (let i = 0; i < n; i++) items.push({ itemId: u16(), price: u32(), element: u8() });
+      return { type: "shopOpen", npcId, npcName, items, sellRate: u16(), buyOnly: u8() === 1 };
+    }
+    case 0x8030: {
+      const id = u32(), name = str(), title = str(), job = u16(), x = u16(), y = u16(), dir = u8();
+      return { type: "vendor", id, name, title, job, x, y, dir, look: look() };
     }
     case 0x800a:
       return { type: "shopResult", code: u8() };
     case 0x800b: {
       const n = u16();
       const items: InvItem[] = [];
-      for (let i = 0; i < n; i++) items.push({ index: u16(), itemId: u16(), amount: u16(), equip: u16() });
+      for (let i = 0; i < n; i++) {
+        const entry = { index: u16(), itemId: u16(), amount: u16(), equip: u16(), cards: [] as number[], element: 0 };
+        for (let c = u8(); c > 0; c--) entry.cards.push(u16());
+        entry.element = u8();
+        items.push(entry);
+      }
       return { type: "inventory", items };
     }
     case 0x800c: {
@@ -443,6 +467,18 @@ export class Connection {
     b[3 + n.length] = p.length;
     b.set(p, 4 + n.length);
     this.ws?.send(b);
+  }
+
+  /** Puts the card at one inventory index into the equipment at another. */
+  compound(cardIndex: number, equipIndex: number): void {
+    this.send(
+      0x0025,
+      (v) => {
+        v.setUint16(2, cardIndex, true);
+        v.setUint16(4, equipIndex, true);
+      },
+      4,
+    );
   }
 
   /** Logs back in after a server update with the token it handed out. */

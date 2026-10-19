@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,6 +104,10 @@ var migrations = []string{
 		name       TEXT    NOT NULL COLLATE NOCASE,
 		expires    INTEGER NOT NULL      -- Unix seconds
 	);`,
+	// Cards compounded into equipment: their item IDs in slot order, comma-separated.
+	`ALTER TABLE inventory ADD COLUMN cards TEXT NOT NULL DEFAULT '';`,
+	// A forged weapon's element (0 = an ordinary item).
+	`ALTER TABLE inventory ADD COLUMN element INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // Open opens (creating if needed) the database at path and brings its schema
@@ -224,16 +229,18 @@ func (s *Store) load(ctx context.Context, name string) (id int64, c Character, e
 	}
 	c.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 
-	rows, err := s.db.QueryContext(ctx, `SELECT slot, item_id, amount, equip FROM inventory WHERE char_id = ? ORDER BY slot`, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT slot, item_id, amount, equip, cards, element FROM inventory WHERE char_id = ? ORDER BY slot`, id)
 	if err != nil {
 		return 0, Character{}, err
 	}
 	for rows.Next() {
 		var it game.InvItem
-		if err := rows.Scan(&it.Index, &it.ItemID, &it.Amount, &it.Equip); err != nil {
+		var cards string
+		if err := rows.Scan(&it.Index, &it.ItemID, &it.Amount, &it.Equip, &cards, &it.Element); err != nil {
 			rows.Close()
 			return 0, Character{}, err
 		}
+		it.Cards = parseCards(cards)
 		d.Inventory = append(d.Inventory, it)
 	}
 	rows.Close()
@@ -290,8 +297,8 @@ func writeChildren(ctx context.Context, tx *sql.Tx, id int64, c *game.CharData) 
 		}
 	}
 	for _, it := range c.Inventory {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO inventory (char_id, slot, item_id, amount, equip) VALUES (?, ?, ?, ?, ?)`,
-			id, it.Index, it.ItemID, it.Amount, it.Equip); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO inventory (char_id, slot, item_id, amount, equip, cards, element) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			id, it.Index, it.ItemID, it.Amount, it.Equip, formatCards(it.Cards), it.Element); err != nil {
 			return err
 		}
 	}
@@ -437,4 +444,23 @@ func (s *Store) SaveAll(mapName string, x, y int) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// formatCards and parseCards store an item's card IDs as "4001,4002".
+func formatCards(cards []int) string {
+	parts := make([]string, len(cards))
+	for i, id := range cards {
+		parts[i] = strconv.Itoa(id)
+	}
+	return strings.Join(parts, ",")
+}
+
+func parseCards(s string) []int {
+	var out []int
+	for _, part := range strings.Split(s, ",") {
+		if id, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
 }

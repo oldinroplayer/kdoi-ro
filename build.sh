@@ -163,6 +163,7 @@ While it runs, its terminal takes commands:
   exprate [rate]            show or set the monster EXP rate (exprate 2 = x2)
   droprate [rate]           show or set the monster drop rate (droprate 2 = x2)
   chatmode [server|local]   public chat to everyone online, or only nearby
+  fakeplayers [on|off]      fake players on maps real players are on (off at start)
   help                      all commands
 
 Folders:

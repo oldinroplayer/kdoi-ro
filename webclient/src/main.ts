@@ -6,6 +6,7 @@ import { SkillDb } from "./skills";
 import { CLOSE_UPDATING, Connection, LoginCode, loginMessages, type ServerPacket } from "./net";
 import { clearResume, loadResume, saveResume, UpdateOverlay, waitForServer } from "./update";
 import { ServerStatsLine } from "./serverstats";
+import { loadSkin } from "./ui/skin";
 import { PlayerState } from "./state";
 import { formatZeny, hideTooltip, toast } from "./ui/common";
 import { EquipmentWindow } from "./ui/equipment";
@@ -43,10 +44,14 @@ if (!import.meta.hot) {
   serverInput.value = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 }
 const errorText = $("login-error");
+// The 2004 client's interface bitmaps (window bars, buttons) for the stylesheet.
+void loadSkin();
 // Players online and the rates, refreshed while the login screen is up.
 const serverStats = new ServerStatsLine($("server-stats"), () => serverInput.value.trim());
 serverStats.start();
 serverInput.addEventListener("change", () => void serverStats.refresh());
+// The same, in game under the minimap (for the server we're playing on).
+const gameStats = new ServerStatsLine($("game-stats"), () => currentServer || serverInput.value.trim());
 const button = $<HTMLButtonElement>("login-button");
 const hud = $("hud");
 const hudName = $("hud-name");
@@ -172,12 +177,18 @@ state.subscribe(() => {
   setBar(spBar, s.sp, s.maxSp, "SP");
   setExpBar(baseExpBar, s.baseExp, s.baseNext, "Base");
   setExpBar(jobExpBar, s.jobExp, s.jobNext, "Job");
+  // The minimized status box hides the EXP bars: show them as percentages.
+  $("hud-exp-mini").textContent = `Base ${expPercent(s.baseExp, s.baseNext)} · Job ${expPercent(s.jobExp, s.jobNext)}`;
   hudZeny.textContent = formatZeny(s.zeny);
 });
 
+/** EXP towards the next level as "45.3%" (rounded down), or "MAX" at the cap. */
+function expPercent(value: number, next: number): string {
+  return next ? `${(Math.floor((1000 * value) / next) / 10).toFixed(1)}%` : "MAX";
+}
+
 function setExpBar(bar: HTMLElement, value: number, next: number, label: string) {
-  const pct = next ? Math.floor((1000 * value) / next) / 10 : 100;
-  setBar(bar, value, next, label, next ? `${label} EXP ${pct.toFixed(1)}%` : `${label} EXP MAX`);
+  setBar(bar, value, next, label, `${label} EXP ${expPercent(value, next)}`);
 }
 
 function setBar(bar: HTMLElement, value: number, max: number, label: string, text?: string) {
@@ -205,7 +216,7 @@ function handleUiPacket(p: ServerPacket): boolean {
       return true;
     }
     case "shopOpen":
-      state.shop = { npcId: p.npcId, npcName: p.npcName, items: p.items, sellRate: p.sellRate };
+      state.shop = { npcId: p.npcId, npcName: p.npcName, items: p.items, sellRate: p.sellRate, buyOnly: p.buyOnly };
       shop.show(state.shop);
       return true;
     case "shopResult":
@@ -360,6 +371,30 @@ respawnButton.addEventListener("click", () => {
   deathDialog.hidden = true;
 });
 
+// The status box minimizes to just the name and HP/SP, like the client's
+// Basic Info window (Alt+V or its corner button); remembered between visits.
+const hudCard = $("hud-card");
+const hudMini = $<HTMLButtonElement>("hud-mini");
+const MINI_KEY = "kdoiro.hudMini";
+function setHudMini(mini: boolean) {
+  hudCard.classList.toggle("mini", mini);
+  hudMini.setAttribute("aria-pressed", String(mini));
+  const label = mini ? "Restore status (Alt+V)" : "Minimize status (Alt+V)";
+  hudMini.setAttribute("aria-label", label);
+  hudMini.title = mini ? "Restore (Alt+V)" : "Minimize (Alt+V)";
+  try {
+    localStorage.setItem(MINI_KEY, mini ? "1" : "0");
+  } catch {
+    // Storage blocked: just not remembered.
+  }
+}
+try {
+  setHudMini(localStorage.getItem(MINI_KEY) === "1");
+} catch {
+  setHudMini(false);
+}
+hudMini.addEventListener("click", () => setHudMini(!hudCard.classList.contains("mini")));
+
 // RO's shortcuts: Alt+E inventory, Alt+Q equipment, Alt+A status.
 const shortcuts: Record<string, () => void> = {
   KeyE: () => inventory.window.toggle(),
@@ -369,6 +404,7 @@ const shortcuts: Record<string, () => void> = {
   KeyC: openRoomCreator,
   KeyB: () => bot.toggle(),
   KeyZ: () => partyWindow.window.toggle(),
+  KeyV: () => setHudMini(!hudCard.classList.contains("mini")),
 };
 
 window.addEventListener("keydown", (ev) => {
@@ -445,6 +481,7 @@ function showLogin(error = "") {
   setStatus("");
   loginOverlay.hidden = false;
   serverStats.start();
+  gameStats.stop();
   errorText.textContent = error;
   button.disabled = false;
   passwordInput.focus();
@@ -530,6 +567,7 @@ async function enterGame(serverUrl: string, name: string, sendLogin: (c: Connect
     if (p.code === LoginCode.OK || p.code === LoginCode.Created) {
       loginOverlay.hidden = true;
       serverStats.stop();
+      gameStats.start();
       hud.hidden = false;
       hudName.textContent = name;
       state.name = name;

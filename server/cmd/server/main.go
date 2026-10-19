@@ -39,6 +39,7 @@ func main() {
 	bgmDir := flag.String("bgm", "", "BGM folder served at /bgm when -web is set")
 	expRate := flag.Float64("exp-rate", 1, "monster EXP multiplier (2 = x2); the console's exprate changes it live")
 	dropRate := flag.Float64("drop-rate", 1, "monster drop chance multiplier (2 = x2); the console's droprate changes it live")
+	fakePlayers := flag.Bool("fake-players", false, "fill maps that real players are on with fake players; the console's fakeplayers toggles it")
 	pidFile := flag.String("pidfile", "", "write the process ID here (for ./build.sh dev --update to signal it)")
 	flag.Parse()
 
@@ -49,7 +50,7 @@ func main() {
 			defer os.Remove(*pidFile)
 		}
 	}
-	err := run(*addr, *dataDir, *mapList, *dbPath, *importJSON, *origins, *webDir, *bgmDir, *expRate, *dropRate)
+	err := run(*addr, *dataDir, *mapList, *dbPath, *importJSON, *origins, *webDir, *bgmDir, *expRate, *dropRate, *fakePlayers)
 	if errors.Is(err, errUpdating) {
 		if *pidFile != "" {
 			os.Remove(*pidFile) // os.Exit skips deferred calls
@@ -62,7 +63,7 @@ func main() {
 	}
 }
 
-func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir string, expRate, dropRate float64) error {
+func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir string, expRate, dropRate float64, fakePlayers bool) error {
 	maps := map[string]*gat.Map{}
 	for _, name := range strings.Split(mapList, ",") {
 		name = strings.TrimSpace(name)
@@ -185,15 +186,16 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 		parties[i] = world.PartyRecord{ID: p.ID, Name: p.Name, Leader: p.Leader, Members: p.Members, EvenEXP: p.EvenEXP}
 	}
 	w, err := world.New(world.Config{
-		Parties:    parties,
-		PartyStore: partyStore{store},
-		Maps:       maps,
-		Warps:      warps,
-		NPCs:       npcs,
-		Spawns:     spawns,
-		SavePoint:  world.Location{Map: spawn.Map, X: spawn.X, Y: spawn.Y},
-		ExpRate:    expRate,
-		DropRate:   dropRate,
+		Parties:     parties,
+		PartyStore:  partyStore{store},
+		Maps:        maps,
+		Warps:       warps,
+		NPCs:        npcs,
+		Spawns:      spawns,
+		SavePoint:   world.Location{Map: spawn.Map, X: spawn.X, Y: spawn.Y},
+		ExpRate:     expRate,
+		DropRate:    dropRate,
+		FakePlayers: fakePlayers,
 	})
 	if err != nil {
 		return err

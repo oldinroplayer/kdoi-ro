@@ -32,6 +32,20 @@ GO = {
 EFFECT_FOLDERS = ("data\\texture\\effect\\", "data\\sprite\\이팩트\\", "data\\wav\\effect\\")
 
 
+UI_ROOT = "data\\texture\\유저인터페이스\\"
+UI_FOLDERS = (UI_ROOT + "basic_interface\\", UI_ROOT + "login_interface\\")
+
+
+def is_ui_texture(key):
+    """Interface frames and controls: the two kit folders, plus the root's
+    ASCII-named files (sysbox_*, scroll*, checkbox_*...; its Korean-named
+    files are item art)."""
+    if key.startswith(UI_FOLDERS):
+        return True
+    rest = key[len(UI_ROOT):] if key.startswith(UI_ROOT) else None
+    return rest is not None and "\\" not in rest and rest.isascii()
+
+
 def read(rel):
     with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
         return f.read()
@@ -80,6 +94,8 @@ def main():
     # and msg (the critical hit starburst).
     wanted += [f"data\\sprite\\이팩트\\{n}.{ext}" for n in ("torch_01", "msg") for ext in ("spr", "act")]
     wanted += ["data\\wav\\effect\\ef_hit2.wav"]  # game.ts CRIT_SOUND
+    # The Blacksmith's body, for the vending stalls (VENDORS in gen_world.py).
+    wanted += [f"data\\sprite\\인간족\\몸통\\{sex}\\제철공_{sex}.{ext}" for sex in ("남", "여") for ext in ("spr", "act")]
     # Hit sounds by weapon (game.ts hitSound).
     wanted += [f"data\\wav\\_hit_{w}.wav" for w in ("axe", "spear", "mace", "rod")]
     for r in names:
@@ -92,6 +108,10 @@ def main():
         # The client's whole effect library: skill textures and STR files, effect
         # sprites and effect sounds (about 60 MB), so any skill's visuals load.
         found += [e for k, e in entries.items() if k.startswith(EFFECT_FOLDERS)]
+        # The 2004 interface kit (window bars, buttons, dialog and chat frames),
+        # for the client's look: basic_interface, login_interface, and the
+        # interface root's frames and controls (not item icons or card art).
+        found += [e for k, e in entries.items() if is_ui_texture(k)]
         missing = [w for w in wanted if w.lower() not in entries]
         grf_extract.extract_entries(f, found, out)
 

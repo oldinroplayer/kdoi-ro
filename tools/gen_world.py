@@ -41,6 +41,14 @@ EXTRA_FIELDS = [
     "prt_fild07",  # west of prt_fild08 (south of Prontera): Rockers
     "moc_fild12",  # south of Morroc
     "pay_dun00",  # Payon Cave level 1, entered from the Archer Village (pay_arche)
+    "pay_dun01",  # Payon Cave level 2, below level 1
+    # Training spots the Training Guide sends players to (TRAINING below).
+    "pay_dun02",  # Payon Cave level 3: Munak, Bon Gun
+    "pay_dun03",  # Payon Cave level 4: Sohee
+    "pay_fild07",  # Payon field: Elder Willow, Eggyra, Bigfoot
+    "anthell01",  # Ant Hell 1: Andre, Piere, Deniro
+    "orcsdun01",  # Orc Dungeon 1: Orc Zombie
+    "orcsdun02",  # Orc Dungeon 2: Zenorc, Orc Skeleton
 ]
 # Already hand-written in main.go (Morroc and its two fields).
 EXISTING = {"morocc", "moc_fild07", "moc_fild06"}
@@ -93,6 +101,76 @@ CAVE_CAMP = [
     ("Weapon Dealer", 40, 126, 0),
     ("Armor Dealer", 44, 126, 0),
     ("Reset Maid", 52, 137, 4),  # free stat and skill reset (world.KindReset)
+    ("Training Guide", 56, 137, 4),  # free warp to a map for your level (TRAINING)
+]
+
+# Vending stalls around the camp: Merchants and Blacksmiths sitting with a
+# shop sign, like players vending. Prices are figured from the NPC shop price
+# (item_db's): `discount` is a fraction of it (each item varied a little, the
+# same every run); forged elemental weapons cost the base weapon's price plus
+# an elemental stone's worth. (title, job, female, hair, hair colour, x, y,
+# facing, discount, items), items as item ID or (item ID, element).
+BLACKSMITH = 10  # the Blacksmith's class (a 2nd job: only drawn here)
+FIRE, WATER, WIND, EARTH = 3, 1, 4, 2
+VENDORS = [
+    ("Potions 20% off!", 5, True, 7, 3, 45, 122, 0, 0.80, [501, 502, 503, 504, 645, 656]),
+    ("Wings & Arrows cheap", 5, False, 4, 1, 49, 122, 0, 0.78, [601, 602, 1750, 1770, 1751, 1752]),
+    ("Herbs and snacks", 5, True, 12, 5, 53, 122, 0, 0.85, [507, 508, 511, 512, 519, 517]),
+    ("Fire weapons, forged today", BLACKSMITH, False, 2, 6, 45, 118, 0, 1.0,
+     [(1207, FIRE), (1101, FIRE), (1104, FIRE), (1301, FIRE), (1501, FIRE)]),
+    ("Ice blades", BLACKSMITH, True, 9, 2, 49, 118, 0, 1.0,
+     [(1201, WATER), (1207, WATER), (1101, WATER), (1107, WATER), (1401, WATER)]),
+    ("Wind weapons", BLACKSMITH, False, 5, 0, 53, 118, 0, 1.0,
+     [(1204, WIND), (1210, WIND), (1104, WIND), (1116, WIND), (1351, WIND)]),
+    ("Earth weapons", BLACKSMITH, True, 14, 4, 45, 114, 0, 1.0,
+     [(1207, EARTH), (1101, EARTH), (1107, EARTH), (1504, EARTH), (1301, EARTH)]),
+    ("Elemental daggers", BLACKSMITH, False, 11, 7, 49, 114, 0, 1.0,
+     [(1201, FIRE), (1204, WATER), (1207, WIND), (1210, EARTH)]),
+    ("Weapon clearance", BLACKSMITH, False, 3, 8, 53, 114, 0, 0.82, [1101, 1104, 1107, 1116, 1201, 1204, 1207, 1210]),
+    ("Armor sale", 5, True, 6, 1, 40, 141, 4, 0.85, [2301, 2303, 2305, 2312, 2401, 2403]),
+    ("Shields & garments", 5, False, 8, 3, 44, 141, 4, 0.88, [2101, 2103, 2501, 2503]),
+    ("Hats! Hats! Hats!", 5, True, 15, 6, 48, 141, 4, 0.90, [2220, 2226, 2211, 2208, 2224, 2201]),
+    ("Archer supply", 5, False, 1, 2, 44, 145, 4, 0.86, [1701, 1704, 1750, 1770, 1751, 1752]),
+    ("Mage & Acolyte corner", 5, True, 10, 4, 48, 145, 4, 0.87, [1601, 1604, 1501, 1504, 2501, 503]),
+]
+VENDOR_ID_BASE = 55000
+
+
+def vendor_price(item_id, base, discount, element):
+    """A ware's price: the NPC price at the stall's discount, or for a forged
+    weapon the base price plus an elemental stone (3000-6000), varied per item
+    by a fixed amount so prices stay put between runs."""
+    jitter = ((item_id * 2654435761 + element * 97) % 1000) / 1000  # 0..1, stable
+    if element:
+        return int(base * (1.05 + 0.25 * jitter) + 3000 + 3000 * jitter) // 10 * 10
+    return max(1, int(base * (discount + (jitter - 0.5) * 0.10)))
+
+
+# The Training Guide's menu: level ranges, each with maps suited to it (picked
+# by their 2004 monsters' levels), as (label, map, x, y). The spots are where
+# the 2004 warps into each map arrive (Ant Hell's outside entrance is a
+# scripted warp: its usual landing spot).
+TRAINING = [
+    ("Lv 1-10", [
+        ("Prontera South Field (Poring, Lunatic)", "prt_fild08", 170, 375),
+        ("Payon Forest (Willow, Spore)", "pay_fild08", 20, 74),
+        ("Geffen Field (Poporing, Fabre)", "gef_fild00", 46, 199),
+    ]),
+    ("Lv 10-20", [
+        ("Rocker Field (Rocker)", "prt_fild07", 380, 186),
+        ("Payon Cave 1 (Skeleton, Zombie)", "pay_dun00", 21, 183),
+        ("Ant Hell 1 (Andre, Piere, Deniro)", "anthell01", 35, 262),
+    ]),
+    ("Lv 20-30", [
+        ("Payon Cave 2 (Skeleton Soldier, Skeleton Archer)", "pay_dun01", 19, 33),
+        ("Orc Dungeon 1 (Orc Zombie)", "orcsdun01", 32, 170),
+        ("Payon Field (Elder Willow, Eggyra)", "pay_fild07", 23, 207),
+    ]),
+    ("Lv 30-40", [
+        ("Payon Cave 3 (Munak, Bon Gun)", "pay_dun02", 19, 63),
+        ("Payon Cave 4 (Sohee)", "pay_dun03", 155, 159),
+        ("Orc Dungeon 2 (Zenorc, Orc Skeleton)", "orcsdun02", 21, 185),
+    ]),
 ]
 CAMP_ID_BASE = 54000
 # The camp's Weapon and Armor Dealers sell every weapon and armor any 2004 NPC
@@ -445,6 +523,18 @@ def main():
     camp = camp_stock(item_db)
     for stock in camp.values():
         wanted |= set(stock)
+    # Vending stalls: their wares, priced from the NPC price.
+    vendors = []
+    for title, job, female, hair, color, x, y, facing, discount, wares in VENDORS:
+        stock = []
+        for ware in wares:
+            item_id, element = ware if isinstance(ware, tuple) else (ware, 0)
+            if item_id not in item_db:
+                problems.append(f"vendor {title!r}: item {item_id} not in item_db")
+                continue
+            wanted.add(item_id)
+            stock.append((item_id, vendor_price(item_id, num(item_db[item_id][4]), discount, element), element))
+        vendors.append((title, job, female, hair, color, x, y, facing, stock))
     items = {i: item_db[i] for i in sorted(wanted) if i in item_db}
     problems += [f"item {i} missing from item_db" for i in sorted(wanted) if i not in item_db]
 
@@ -457,7 +547,7 @@ def main():
     if payon and CAVE_CAMP_MAP in loaded:
         x, y, d = CAVE_CAMP_KAFRA
         kafras.append((CAVE_CAMP_MAP, x, y, d, payon[4], (CAVE_CAMP_MAP, *CAVE_CAMP_SAVE), payon[6]))
-    write_world(spawns, shops, kafras, parse_warps(loaded), npc_sprite, dealers, camp)
+    write_world(spawns, shops, kafras, parse_warps(loaded), npc_sprite, dealers, camp, vendors)
     for p in problems:
         print("note:", p)
     print(f"{len(all_maps())} maps, {len(spawns)} spawns of {len(mobs)} monsters, {len(items)} items, {len(shops)} shops")
@@ -549,6 +639,42 @@ def write_elements(mob_db, generated):
 HEAD_SLOTS = 0x100 | 0x200 | 0x001
 
 
+# Card script bonuses KDoiRo applies (game.Bonus): one-value bonuses by field,
+# and two-value ones (race or element, percent) by array field.
+CARD_STATS = {"bStr": 0, "bAgi": 1, "bVit": 2, "bInt": 3, "bDex": 4, "bLuk": 5}
+CARD_FIELDS = {
+    "bMaxHP": "MaxHP", "bMaxSP": "MaxSP", "bMaxHPrate": "MaxHPRate", "bMaxSPrate": "MaxSPRate",
+    "bBaseAtk": "Atk", "bAtk": "Atk", "bDef": "Def", "bMdef": "Mdef", "bHit": "Hit", "bFlee": "Flee",
+    "bFlee2": "Flee2", "bCritical": "Crit", "bHPrecovRate": "HPRegenRate", "bSPrecovRate": "SPRegenRate",
+}
+CARD_ARRAYS = {"bAddRace": ("AddRace", "NumRaces"), "bAddEle": ("AddEle", "NumElements"),
+               "bSubRace": ("SubRace", "NumRaces"), "bSubEle": ("SubEle", "NumElements")}
+
+
+def card_bonus(script):
+    """A card's script as a game.Bonus literal, or None if nothing applies."""
+    stats, fields, arrays = [0] * 6, {}, {}
+    for m in re.finditer(r"bonus\s+(b\w+)\s*,\s*(-?\d+)\s*;", script):
+        name, value = m.group(1), int(m.group(2))
+        if name == "bAllStats":
+            stats = [v + value for v in stats]
+        elif name in CARD_STATS:
+            stats[CARD_STATS[name]] += value
+        elif name in CARD_FIELDS:
+            fields[CARD_FIELDS[name]] = fields.get(CARD_FIELDS[name], 0) + value
+    for m in re.finditer(r"bonus2\s+(b\w+)\s*,\s*(\d+)\s*,\s*(-?\d+)\s*;", script):
+        if m.group(1) in CARD_ARRAYS:
+            arrays.setdefault(m.group(1), {})[int(m.group(2))] = int(m.group(3))
+    parts = []
+    if any(stats):
+        parts.append(f"Stats: [NumStats]int{{{', '.join(map(str, stats))}}}")
+    parts += [f"{f}: {v}" for f, v in fields.items() if v]
+    for name, values in arrays.items():
+        field, size = CARD_ARRAYS[name]
+        parts.append(f"{field}: [{size}]int{{{', '.join(f'{k}: {v}' for k, v in sorted(values.items()))}}}")
+    return "&Bonus{" + ", ".join(parts) + "}" if parts else None
+
+
 def write_items(items, headgear_names, weapon_sprite):
     lines = [
         "// Code generated by tools/gen_world.py from reference/eathena-2004/db/item_db.txt; DO NOT EDIT.",
@@ -570,9 +696,17 @@ def write_items(items, headgear_names, weapon_sprite):
         elif warp:
             # Fly Wing (a random spot on the map) and Butterfly Wing (the save point).
             fields += ["Type: TypeWarp", "Warp: " + ("WarpRandom" if warp.group(1) == "Random" else "WarpSavePoint")]
+        elif typ == 6:
+            # Cards: the equipment they go into, and what they add.
+            fields += ["Type: TypeCard", f"CardLoc: {num(r[13]):#04x}"]
+            bonus = card_bonus(",".join(r[17:]))
+            if bonus:
+                fields.append(f"Bonus: {bonus}")
         elif typ in (4, 5):
             loc = num(r[13])
             fields += [f"Type: {'TypeWeapon' if typ == 4 else 'TypeArmor'}", f"Slot: {loc:#04x}"]
+            if num(r[10]):
+                fields.append(f"Slots: {num(r[10])}")
             if num(r[7]):
                 fields.append(f"Atk: {num(r[7])}")
             if num(r[8]):
@@ -612,7 +746,7 @@ def write_items(items, headgear_names, weapon_sprite):
     write("server/internal/game/items_data.go", lines)
 
 
-def write_world(spawns, shops, kafras, warps, npc_sprite, dealers, camp):
+def write_world(spawns, shops, kafras, warps, npc_sprite, dealers, camp, vendors):
     lines = [
         "// Code generated by tools/gen_world.py from reference/eathena-2004/npc; DO NOT EDIT.",
         "",
@@ -682,12 +816,29 @@ def write_world(spawns, shops, kafras, warps, npc_sprite, dealers, camp):
         if name == "Reset Maid":
             lines.append(head + f'Sprite: "4_f_maid", Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, Kind: world.KindReset}},')
             continue
+        if name == "Training Guide":
+            ranges = ", ".join(
+                f"{{Name: {go_str(label)}, Spots: []world.Teleport{{"
+                + ", ".join(f"{{Name: {go_str(n)}, Map: {go_str(m)}, X: {tx}, Y: {ty}}}" for n, m, tx, ty in spots)
+                + "}}" for label, spots in TRAINING)
+            lines.append(head + f'Sprite: "4_f_job_hunter", Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, '
+                         f"Kind: world.KindTraining,")
+            lines.append(f"\t\tTraining: []world.TrainingRange{{{ranges}}}}},")
+            continue
         cls, stock = dealers[CAVE_CAMP_STOCK][name]
         price = ""
         if name in camp:  # every class's weapons or armor, at a token price
             stock, price = camp[name], f", Price: {CAVE_CAMP_PRICE}"
         lines.append(head + f"Sprite: {go_str(npc_sprite(cls))}, Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, "
                      f"Shop: []int{{{', '.join(map(str, stock))}}}{price}}},")
+    # Vending stalls around the camp (VENDORS).
+    for i, (title, job, female, hair, color, x, y, facing, stock) in enumerate(vendors, 1):
+        wares = ", ".join(f"{{ItemID: {it}, Price: {pr}" + (f", Element: {el}" if el else "") + "}"
+                          for it, pr, el in stock)
+        lines.append(f"\t{{ID: {VENDOR_ID_BASE + i}, Name: {go_str(('Merchant' if job == 5 else 'Blacksmith'))}, "
+                     f"Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, Vendor: &world.Vendor{{"
+                     f"Title: {go_str(title)}, Job: {job}, Female: {str(female).lower()}, Hair: {hair}, HairColor: {color},")
+        lines.append(f"\t\tStock: []world.VendItem{{{wares}}}}}}},")
     lines += ["}", ""]
     # Morroc's hand-written dealers (main.go) add the 2004 stock to theirs.
     lines += ["// morroccDealerStock is Morroc's indoor 2004 dealer stock, by dealer name.",

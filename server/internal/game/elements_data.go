@@ -68,8 +68,14 @@ var mobTraits = map[int]MobTraits{
 	1012: {Element: 1, ElementLevel: 1, Race: 5, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: false}, // Roda Frog
 	1014: {Element: 1, ElementLevel: 1, Race: 3, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: false}, // Spore
 	1015: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Zombie
+	1016: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Skeleton Archer
 	1019: {Element: 3, ElementLevel: 1, Race: 2, Size: 2, ViewRange: 10, Aggressive: false, CastSensor: true},  // PecoPeco
+	1020: {Element: 2, ElementLevel: 3, Race: 3, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Mandragora
+	1026: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Munak
+	1028: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Skeleton Soldier
 	1031: {Element: 5, ElementLevel: 1, Race: 3, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: false}, // Poporing
+	1033: {Element: 3, ElementLevel: 2, Race: 3, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Elder Willow
+	1042: {Element: 4, ElementLevel: 1, Race: 4, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Steel ChonChon
 	1047: {Element: 0, ElementLevel: 3, Race: 0, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // PecoPeco Egg
 	1048: {Element: 7, ElementLevel: 1, Race: 4, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Thief Bug Egg
 	1049: {Element: 3, ElementLevel: 1, Race: 2, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Picky
@@ -77,19 +83,35 @@ var mobTraits = map[int]MobTraits{
 	1051: {Element: 0, ElementLevel: 3, Race: 0, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Thief Bug Larva
 	1052: {Element: 2, ElementLevel: 1, Race: 4, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: false}, // Rocker
 	1055: {Element: 2, ElementLevel: 1, Race: 3, Size: 2, ViewRange: 10, Aggressive: false, CastSensor: false}, // Muka
+	1060: {Element: 2, ElementLevel: 1, Race: 2, Size: 2, ViewRange: 10, Aggressive: false, CastSensor: true},  // Bigfoot
 	1063: {Element: 0, ElementLevel: 3, Race: 2, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Lunatic
+	1068: {Element: 1, ElementLevel: 2, Race: 3, Size: 0, ViewRange: 10, Aggressive: true, CastSensor: false},  // Hydra
 	1076: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: true},  // Skeleton
 	1078: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Red Plant
 	1079: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Blue Plant
 	1080: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Green Plant
 	1081: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Yellow Plant
+	1082: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // White Plant
 	1083: {Element: 6, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Shining Plant
 	1084: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Black Mushroom
 	1085: {Element: 2, ElementLevel: 1, Race: 3, Size: 0, ViewRange: 7, Aggressive: false, CastSensor: false},  // Red Mushroom
 	1095: {Element: 2, ElementLevel: 1, Race: 4, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Andre
 	1097: {Element: 0, ElementLevel: 3, Race: 0, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Ant Egg
 	1105: {Element: 2, ElementLevel: 1, Race: 4, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Deniro
+	1111: {Element: 7, ElementLevel: 2, Race: 2, Size: 0, ViewRange: 10, Aggressive: true, CastSensor: true},   // Drainliar
 	1113: {Element: 3, ElementLevel: 1, Race: 3, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: false}, // Drops
+	1116: {Element: 8, ElementLevel: 2, Race: 0, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: true},  // Eggyra
+	1121: {Element: 2, ElementLevel: 1, Race: 6, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: true},  // Giearth
 	1138: {Element: 1, ElementLevel: 1, Race: 6, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Magnolia
+	1152: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Orc Skeleton
+	1153: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Orc Zombie
 	1160: {Element: 2, ElementLevel: 1, Race: 4, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: false}, // Piere
+	1170: {Element: 1, ElementLevel: 1, Race: 6, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: true},  // Sohee
+	1176: {Element: 2, ElementLevel: 1, Race: 4, Size: 0, ViewRange: 10, Aggressive: false, CastSensor: true},  // Vitata
+	1177: {Element: 7, ElementLevel: 1, Race: 7, Size: 1, ViewRange: 10, Aggressive: false, CastSensor: false}, // Zenorc
+	1180: {Element: 3, ElementLevel: 3, Race: 2, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: true},   // Nine-Tail
+	1186: {Element: 8, ElementLevel: 2, Race: 6, Size: 0, ViewRange: 10, Aggressive: true, CastSensor: true},   // Giant Whisper
+	1188: {Element: 9, ElementLevel: 1, Race: 1, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: true},   // Bon Gun
+	1189: {Element: 2, ElementLevel: 1, Race: 7, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: true},   // Orc Archer
+	1277: {Element: 3, ElementLevel: 2, Race: 0, Size: 1, ViewRange: 10, Aggressive: true, CastSensor: false},  // Greatest General
 }

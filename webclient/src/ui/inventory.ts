@@ -5,6 +5,7 @@ import type { Connection, InvItem } from "../net";
 import type { ItemInfo } from "../items";
 import type { PlayerState } from "../state";
 import { formatZeny, itemCell, toast } from "./common";
+import { CompoundWindow } from "./compound";
 import { GameWindow } from "./window";
 
 type Tab = "item" | "equip" | "etc";
@@ -19,11 +20,13 @@ export class InventoryWindow {
   private readonly tabs = document.createElement("div");
   private readonly grid = document.createElement("div");
   private readonly footer = document.createElement("div");
+  private readonly compound: CompoundWindow;
 
   constructor(
     private readonly state: PlayerState,
     private readonly conn: () => Connection | null,
   ) {
+    this.compound = new CompoundWindow(state, conn);
     this.tabs.className = "tabs";
     this.tabs.setAttribute("role", "tablist");
     for (const [id, label] of [["item", "Item"], ["equip", "Equip"], ["etc", "Etc"]] as const) {
@@ -85,9 +88,22 @@ export class InventoryWindow {
     // Every item can be dragged onto the ground to drop it; healing items also
     // onto the hotkey bar.
     const drag = JSON.stringify({ kind: "item", id: info.id, index: it.index, amount: it.amount, hotkey: usable(info) });
+    const items = this.state.items;
+    const name = items?.label(info.id, it.cards, it.element) ?? info.name;
+    const cards = info.slots ? { slots: info.slots, names: it.cards.map((c) => items?.get(c)?.name ?? `Card ${c}`) } : undefined;
+    if (info.type === "card") {
+      return itemCell(info, it.amount, {
+        dragData: drag,
+        name,
+        action: "insert into equipment",
+        onActivate: () => this.compound.show(it),
+      });
+    }
     if (info.slot) {
       return itemCell(info, it.amount, {
         dragData: drag,
+        name,
+        cards,
         action: "equip",
         onActivate: () => {
           const c = this.conn();

@@ -1,5 +1,10 @@
 package game
 
+import (
+	"errors"
+	"slices"
+)
+
 // Resets, as rAthena's (pre-renewal) stat and skill reset: everything spent
 // comes back to be spent again.
 
@@ -40,3 +45,32 @@ func (c *CharData) ResetSkills() int {
 	c.ClampVitals() // passives like SP Recovery or HP Recovery no longer count
 	return refunded
 }
+
+// ErrNotFirstJob means a job switch was asked of a Novice (they take the Job
+// Guide's test instead) or towards a job that isn't a 1st job.
+var ErrNotFirstJob = errors.New("only 1st jobs can switch to another 1st job")
+
+// SwitchJob turns a 1st job into another 1st job, keeping its job level and
+// job EXP, and resets stats and skills so every point can be spent again on
+// the new job (Basic Skill and quest skills stay). Gear the new job can't use
+// comes off.
+func (c *CharData) SwitchJob(job uint16) error {
+	if !slices.Contains(FirstJobs, c.Job) || !slices.Contains(FirstJobs, job) {
+		return ErrNotFirstJob
+	}
+	if job == c.Job {
+		return ErrSameJob
+	}
+	c.ResetSkills() // the old job's skills, while it's still the old job
+	c.Job = job
+	for i := range c.Inventory {
+		if c.Inventory[i].Equip != 0 && !Items[c.Inventory[i].ItemID].CanUse(job) {
+			c.Inventory[i].Equip = 0
+		}
+	}
+	c.ResetStats()
+	return nil
+}
+
+// ErrSameJob means a switch to the job the character already has.
+var ErrSameJob = errors.New("that's already your job")

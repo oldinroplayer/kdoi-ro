@@ -128,3 +128,40 @@ func TestResetPlayer(t *testing.T) {
 		t.Fatalf("offline character: %v", err)
 	}
 }
+
+func TestResetMaidChangesJob(t *testing.T) {
+	maid := NPC{ID: 900, Name: "Reset Maid", Sprite: "4_f_maid", Map: "town", X: 5, Y: 6, Kind: KindReset}
+	w, err := New(Config{Maps: map[string]*gat.Map{"town": openMap(t, 10, 10)}, SavePoint: Location{Map: "town", X: 1, Y: 1}, NPCs: []NPC{maid}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.Run(ctx)
+	data := game.NewChar("town", 5, 5)
+	data.Job, data.JobLevel = game.JobSwordman, 15
+	data.Skills[game.SkillBash], data.SkillPoints = 5, 0
+	id, err := w.Join("Hero", data, discard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Talk, pick "Change job" (after the three resets), then the first job
+	// offered: Mage (Swordman, the current one, is left out of the list).
+	if err := w.ClickNpc(id, maid.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, choice := range []uint8{3, 0} {
+		if err := w.NpcReply(id, maid.ID, choice); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var job uint16
+	var points, level int
+	w.do(func() {
+		p := w.players[id]
+		job, points, level = p.data.Job, p.data.SkillPoints, p.data.JobLevel
+	})
+	if job != game.JobMage || points != 5 || level != 15 {
+		t.Fatalf("after the switch: job %d, %d skill points, job level %d; want Mage, 5, 15", job, points, level)
+	}
+}

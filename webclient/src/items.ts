@@ -4,8 +4,12 @@ import { fetchData, loadKeyedCanvas } from "./assets";
 
 export interface ItemInfo {
   id: number;
-  type: "healing" | "weapon" | "armor" | "ammo" | "warp" | "etc";
+  type: "healing" | "weapon" | "armor" | "ammo" | "warp" | "card" | "etc";
   slot: number; // equip location bitmask, 0 if not equippable
+  /** Card slots in this equipment (0-4). */
+  slots: number;
+  /** Cards: the equipment they go into (an equip location bitmask). */
+  cardLoc: number;
   atk: number;
   def: number;
   weight: number;
@@ -23,7 +27,13 @@ export interface ItemInfo {
 const cp949 = new TextDecoder("euc-kr");
 
 export class ItemDb {
-  private constructor(private readonly items: Map<number, ItemInfo>) {}
+  private constructor(
+    private readonly items: Map<number, ItemInfo>,
+    /** Card ID -> the word it adds to an item's name ("Lucky"). */
+    private readonly cardNames: Map<number, string>,
+    /** Cards whose word goes after the item's name instead of before. */
+    private readonly postfixCards: Set<number>,
+  ) {}
 
   static async load(wsUrl: string): Promise<ItemDb> {
     const http = new URL(wsUrl);
@@ -31,7 +41,7 @@ export class ItemDb {
     http.pathname = "/items.json";
     http.search = "";
 
-    const [defs, names, resNames, descs] = await Promise.all([
+    const [defs, names, resNames, descs, cardNames, postfixCards] = await Promise.all([
       fetch(http).then((r) => {
         if (!r.ok) throw new Error(`items.json: HTTP ${r.status}`);
         return r.json() as Promise<Partial<ItemInfo>[]>;
@@ -39,6 +49,10 @@ export class ItemDb {
       fetchData("idnum2itemdisplaynametable.txt").then(parseTable),
       fetchData("idnum2itemresnametable.txt").then(parseTable),
       fetchData("idnum2itemdesctable.txt").then(parseDescTable),
+      // The client's card naming tables; an old data set without them just
+      // names items plainly.
+      fetchData("cardprefixnametable.txt").then(parseTable).catch(() => new Map<number, string>()),
+      fetchData("cardpostfixnametable.txt").then(parseIds).catch(() => new Set<number>()),
     ]);
 
     const items = new Map<number, ItemInfo>();
@@ -48,6 +62,8 @@ export class ItemDb {
         id,
         type: d.type!,
         slot: d.slot ?? 0,
+        slots: d.slots ?? 0,
+        cardLoc: d.cardLoc ?? 0,
         atk: d.atk ?? 0,
         def: d.def ?? 0,
         weight: d.weight ?? 0,
@@ -59,12 +75,53 @@ export class ItemDb {
         sprite: d.sprite ?? "",
       });
     }
-    return new ItemDb(items);
+    return new ItemDb(items, cardNames, postfixCards);
   }
 
   get(id: number): ItemInfo | undefined {
     return this.items.get(id);
   }
+
+  /**
+   * An item's name as the client shows it: its cards' words around the name
+   * (two of a card: "Double", three "Triple", four "Quadruple"), then its
+   * slot count, e.g. "Double Vital Knife [3]".
+   */
+  label(id: number, cards: readonly number[] = [], element = 0): string {
+    const info = this.items.get(id);
+    let name = info?.name ?? `Item ${id}`;
+    // A Blacksmith's forged weapon: its element before the name ("Fire Main Gauche").
+    if (FORGED[element]) name = `${FORGED[element]} ${name}`;
+    const counts = new Map<number, number>();
+    for (const c of cards) counts.set(c, (counts.get(c) ?? 0) + 1);
+    const before: string[] = [];
+    const after: string[] = [];
+    for (const [card, n] of counts) {
+      const word = this.cardNames.get(card);
+      if (!word) continue;
+      const text = `${MULTIPLE[n] ?? ""}${word}`;
+      (this.postfixCards.has(card) ? after : before).push(text);
+    }
+    if (before.length) name = `${before.join(" ")} ${name}`;
+    if (after.length) name = `${name} ${after.join(" ")}`;
+    return info?.slots ? `${name} [${info.slots}]` : name;
+  }
+}
+
+/** How the client names forged weapons by element (water, earth, fire, wind). */
+const FORGED: Record<number, string> = { 1: "Ice", 2: "Earth", 3: "Fire", 4: "Wind" };
+
+/** How the client names two, three or four of the same card. */
+const MULTIPLE: Record<number, string> = { 2: "Double ", 3: "Triple ", 4: "Quadruple " };
+
+/** "4014#" lines -> the IDs listed. */
+function parseIds(buf: ArrayBuffer): Set<number> {
+  const out = new Set<number>();
+  for (const line of cp949.decode(buf).split(/\r?\n/)) {
+    const m = /^(\d+)#/.exec(line);
+    if (m) out.add(Number(m[1]));
+  }
+  return out;
 }
 
 /** "1201#Knife#" lines -> id -> value. */

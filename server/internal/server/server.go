@@ -307,6 +307,8 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 			err = s.world.SetAppearance(id, int(p.Style), int(p.Color), p.Female)
 		case *proto.DropItem:
 			err = s.world.DropItem(id, int(p.Index), int(p.Amount))
+		case *proto.Compound:
+			err = s.world.Compound(id, int(p.Card), int(p.Equip))
 		default:
 			return websocket.StatusPolicyViolation, "unexpected packet"
 		}

@@ -1,5 +1,6 @@
-// The login screen's server line: whether the server is up, how many are
-// playing, and its EXP and drop rates (the server's /status.json).
+// The server line on the login screen and in game (under the minimap):
+// whether the server is up, how many are playing, and its EXP and drop rates
+// (the server's /status.json).
 
 interface ServerStats {
   players: number;
@@ -51,8 +52,8 @@ export class ServerStatsLine {
   }
 
   private show(stats: ServerStats | null): void {
-    const set = (id: string, text: string) => {
-      const el = this.root.querySelector<HTMLElement>(`#${id}`);
+    const set = (cls: string, text: string) => {
+      const el = this.root.querySelector<HTMLElement>(`.${cls}`);
       if (el) el.textContent = text;
     };
     this.root.classList.toggle("online", !!stats);

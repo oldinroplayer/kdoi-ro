@@ -34,6 +34,9 @@ func (w *World) Online() []OnlinePlayer {
 	var out []OnlinePlayer
 	w.do(func() {
 		for _, p := range w.players {
+			if p.fake {
+				continue
+			}
 			out = append(out, OnlinePlayer{p.Name, game.Job(p.data.Job).Name, p.data.BaseLevel, p.data.JobLevel, p.m.name, p.x, p.y})
 		}
 	})
@@ -89,7 +92,7 @@ type ServerStats struct {
 func (w *World) Stats() ServerStats {
 	var s ServerStats
 	w.do(func() {
-		s = ServerStats{Players: len(w.players), ExpRate: float64(w.expRate) / 100, DropRate: float64(w.dropRate) / 100}
+		s = ServerStats{Players: len(w.online), ExpRate: float64(w.expRate) / 100, DropRate: float64(w.dropRate) / 100}
 	})
 	return s
 }
@@ -195,6 +198,9 @@ func (w *World) WarpAll(mapName string, x, y int) (int, error) {
 	moved := 0
 	err := w.do(func() {
 		for _, p := range w.players {
+			if p.fake {
+				continue // they belong to their map
+			}
 			w.leaveRoom(p, proto.LeftByChoice) // chat room members can't otherwise move
 			w.cancelCast(p)
 			p.target, p.pending, p.pickup = 0, nil, 0
@@ -224,6 +230,9 @@ func (w *World) SaveAll(mapName string, x, y int) (int, error) {
 	n := 0
 	err := w.do(func() {
 		for _, p := range w.players {
+			if p.fake {
+				continue
+			}
 			p.data.Save = game.SavePoint{Map: mapName, X: sx, Y: sy}
 			p.out.Send(proto.Message("Your respawn point has been changed."))
 			n++

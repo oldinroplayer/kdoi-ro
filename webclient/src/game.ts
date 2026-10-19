@@ -97,6 +97,8 @@ class Unit {
   castCircle: CastCircle | null = null;
   /** What the unit last said, shown over its head for a few seconds. */
   speech: { el: HTMLElement; until: number } | null = null;
+  /** A vending stall's shop sign over its head (stall NPCs only). */
+  vendSign: HTMLElement | null = null;
   /** Last animation frame shown, so each frame's sound plays once. */
   lastFrameKey = "";
   readonly bornAt = performance.now();
@@ -406,6 +408,9 @@ export class Game {
         break;
       case "npc":
         void this.addNpc(p.id, p.name, p.sprite, p.x, p.y, p.dir);
+        break;
+      case "vendor":
+        void this.addVendor(p);
         break;
       case "damage":
         this.showDamage(p);
@@ -763,12 +768,43 @@ export class Game {
     this.scene.add(sprite.object);
   }
 
+  /**
+   * A vending stall: the vendor drawn as a character of its job (Merchant,
+   * Blacksmith) sitting on the ground, with the shop's sign over its head.
+   * Clicking either opens its wares, like any NPC.
+   */
+  private async addVendor(p: Extract<ServerPacket, { type: "vendor" }>) {
+    const generation = this.mapGeneration;
+    const female = p.look.female;
+    let assets: CharacterAssets;
+    try {
+      assets = await this.jobSprite(p.job, female);
+    } catch (err) {
+      console.warn("vendor sprite failed", p.job, err);
+      return;
+    }
+    if (generation !== this.mapGeneration || this.disposed) return;
+    this.removeNpc(p.id);
+    const sprite = new CharacterSprite(assets);
+    const npc = new Unit(p.id, "npc", p.name, 0, sprite, this.labels.create(p.name, "npc"), p.x, p.y, p.dir);
+    npc.job = p.job;
+    npc.look = p.look;
+    npc.sitting = true;
+    npc.vendSign = this.labels.createVendSign(p.title, () => this.talkTo(npc));
+    this.npcs.set(p.id, npc);
+    this.scene.add(sprite.object);
+    void loadEquipLayers(p.look, () => undefined, p.job).then((layers) => {
+      if (this.npcs.get(p.id) === npc) sprite.setEquipment(layers); // their hair
+    });
+  }
+
   private removeNpc(id: number) {
     const n = this.npcs.get(id);
     if (!n) return;
     this.scene.remove(n.sprite.object);
     n.sprite.dispose();
     n.label.remove();
+    n.vendSign?.remove();
     this.npcs.delete(id);
   }
 
@@ -1506,8 +1542,9 @@ export class Game {
         this.updateUnit(u, now);
       }
       for (const n of this.npcs.values()) {
-        n.sprite.draw(PlayerAction.Idle, this.spriteDir(n.dir), 0);
+        n.sprite.draw(n.sitting ? PlayerAction.Sit : PlayerAction.Idle, this.spriteDir(n.dir), 0);
         this.placeSprite(n.sprite, n.label, n.x, n.y);
+        if (n.vendSign) this.labels.placeAbove(n.vendSign, this.headOf(n)(), this.camera);
       }
       this.placeSigns();
       this.placeFloorItems(now);

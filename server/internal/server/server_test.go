@@ -362,10 +362,21 @@ func (c *client) expectInventory() map[int]invEntry {
 	r := c.expect(proto.OpInventory)
 	byItem := map[int]invEntry{}
 	for range int(r.U16()) {
-		e := invEntry{int(r.U16()), int(r.U16()), int(r.U16()), r.U16()}
+		e := readInvEntry(r)
 		byItem[e.itemID] = e
 	}
 	return byItem
+}
+
+// readInvEntry reads one Inventory entry: index, item, amount, equip, then
+// the cards in it (a count, then each card's item ID).
+func readInvEntry(r *proto.Reader) invEntry {
+	e := invEntry{int(r.U16()), int(r.U16()), int(r.U16()), r.U16()}
+	for range int(r.U8()) {
+		r.U16()
+	}
+	r.U8() // forged element
+	return e
 }
 
 func TestShopEquipAndStats(t *testing.T) {

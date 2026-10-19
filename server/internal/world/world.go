@@ -69,6 +69,8 @@ type Config struct {
 	ExpRate float64
 	// DropRate multiplies monsters' drop chances (2 = "x2"); 0 means x1.
 	DropRate float64
+	// FakePlayers fills maps that real players are on with fake players.
+	FakePlayers bool
 	// Parties saved from earlier runs, and where to save changes (nil: don't).
 	Parties    []PartyRecord
 	PartyStore PartyStore
@@ -99,6 +101,11 @@ type Player struct {
 	nextRepath  time.Time
 	nextHPRegen time.Time
 	nextSPRegen time.Time
+
+	// Fake players (fakes.go): no connection, their own simple mind.
+	fake      bool
+	fakeThink time.Time // when it next decides what to do
+	deadSince time.Time // when it was knocked out (to get back up later)
 }
 
 type mapInstance struct {
@@ -114,6 +121,8 @@ type mapInstance struct {
 	// sleepAt ends the grace period after its last player left.
 	asleep  bool
 	sleepAt time.Time
+	// fakes are the fake players on the map (fakes.go), by unit ID.
+	fakes []uint32
 }
 
 // Warp moves a player who steps within SpanX/SpanY cells of (X, Y) on Map
@@ -140,9 +149,13 @@ type NPC struct {
 	Dir    uint8
 	Shop   []int      // item IDs, sold at their database price
 	Price  int        // when set, every item in Shop costs this many zeny instead
-	Kind   string     // KindShop (default), KindJobChange, KindKafra, KindWarper or KindReset
+	Kind   string     // KindShop (default), KindJobChange, KindKafra, KindWarper, KindReset or KindTraining
 	Kafra  *Kafra     // for KindKafra
 	Warps  []Teleport // for KindWarper
+	// Training is a Training Guide's level ranges and their maps (KindTraining).
+	Training []TrainingRange
+	// Vendor makes the NPC a vending stall (vendor.go).
+	Vendor *Vendor
 }
 
 type World struct {
@@ -168,6 +181,8 @@ type World struct {
 	// serverChat sends public chat to every player online instead of only
 	// those nearby (the console's chatmode).
 	serverChat bool
+	// fakesOn fills maps that real players are on with fake players.
+	fakesOn bool
 	// nextFloorSweep is when expired floor items are next cleared.
 	nextFloorSweep time.Time
 
@@ -207,6 +222,7 @@ func New(cfg Config) (*World, error) {
 	if _, ok := w.maps[cfg.SavePoint.Map]; !ok {
 		return nil, fmt.Errorf("save point map %q not loaded", cfg.SavePoint.Map)
 	}
+	w.fakesOn = cfg.FakePlayers
 	for _, r := range []struct {
 		what string
 		rate float64
@@ -313,6 +329,9 @@ func (w *World) do(f func()) error {
 
 func (w *World) tick(now time.Time) {
 	for _, p := range w.players {
+		if p.fake {
+			w.tickFake(p, now)
+		}
 		w.tickPlayer(p, now)
 	}
 	w.tickMaps(now)
@@ -380,6 +399,10 @@ func (w *World) place(p *Player, m *mapInstance, x, y int) {
 		p.out.Send(proto.WarpPortal(wp.X, wp.Y))
 	}
 	for _, n := range m.npcs {
+		if n.Vendor != nil {
+			p.out.Send(n.vendorAppear())
+			continue
+		}
 		p.out.Send(proto.NpcAppear(n.ID, n.Name, n.Sprite, n.X, n.Y, n.Dir))
 	}
 	for _, mob := range m.monsters {
@@ -413,7 +436,7 @@ func (p *Player) look() proto.Look {
 // removeFromMap takes p off its map and stops anything fighting it.
 func (w *World) removeFromMap(p *Player) {
 	delete(p.m.players, p.id)
-	if len(p.m.players) == 0 {
+	if !p.fake && p.m.realPlayers() == 0 {
 		p.m.emptied(time.Now())
 	}
 	w.broadcast(p.m, proto.PlayerDisappear(p.id, proto.GoneOut))

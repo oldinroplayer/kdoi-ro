@@ -109,7 +109,10 @@ export class ShopWindow {
   private render(): void {
     const db = this.state.items;
     if (!this.shop || !db) return;
-    this.title.textContent = `${this.shop.npcName}: “What would you like?”`;
+    // A vending stall shows its sign and only sells: no Sell tab.
+    this.title.textContent = this.shop.buyOnly ? `“${this.shop.npcName}”` : `${this.shop.npcName}: “What would you like?”`;
+    this.tabs.hidden = this.shop.buyOnly;
+    if (this.shop.buyOnly) this.mode = "buy";
     for (const b of this.tabs.querySelectorAll<HTMLButtonElement>("button")) {
       b.setAttribute("aria-selected", String(b.dataset.mode === this.mode));
     }
@@ -122,16 +125,22 @@ export class ShopWindow {
     this.leftHeading.textContent = "For sale";
     this.rightHeading.textContent = "Your cart";
     this.catalogue.replaceChildren(
-      ...this.shop!.items.map(({ itemId, price }) => {
+      ...this.shop!.items.map(({ itemId, price, element }) => {
         const info = db.get(itemId);
         if (!info) return document.createElement("li");
-        const li = row(info, formatZeny(price));
+        const li = row(info, formatZeny(price), 1, db.label(itemId, [], element));
         li.append(addButton(info, () => this.setAmount(this.buyCart, itemId, (this.buyCart.get(itemId) ?? 0) + 1)));
         return li;
       }),
     );
     this.renderCart(
-      [...this.buyCart].map(([itemId, amount]) => ({ key: itemId, info: db.get(itemId)!, amount, price: this.priceOf(itemId) })),
+      [...this.buyCart].map(([itemId, amount]) => ({
+        key: itemId,
+        info: db.get(itemId)!,
+        amount,
+        price: this.priceOf(itemId),
+        name: db.label(itemId, [], this.shop?.items.find((i) => i.itemId === itemId)?.element ?? 0),
+      })),
       this.buyCart,
       MAX_AMOUNT,
     );
@@ -194,7 +203,7 @@ export class ShopWindow {
   }
 
   private renderCart(
-    lines: { key: number; info: ItemInfo; amount: number; price: number; max?: number }[],
+    lines: { key: number; info: ItemInfo; amount: number; price: number; max?: number; name?: string }[],
     cart: Map<number, number>,
     cap: number,
   ): void {
@@ -203,9 +212,9 @@ export class ShopWindow {
       return;
     }
     this.cartList.replaceChildren(
-      ...lines.map(({ key, info, amount, price, max }) => {
+      ...lines.map(({ key, info, amount, price, max, name }) => {
         const limit = Math.min(cap, max ?? cap);
-        const li = row(info, formatZeny(price * amount));
+        const li = row(info, formatZeny(price * amount), 1, name);
         const qty = document.createElement("div");
         qty.className = "qty";
         const minus = smallButton("−", `One fewer ${info.name}`, () => this.setAmount(cart, key, amount - 1, limit));
@@ -244,11 +253,11 @@ export class ShopWindow {
 }
 
 
-function row(info: ItemInfo, priceText: string, amount = 1): HTMLLIElement {
+function row(info: ItemInfo, priceText: string, amount = 1, label = info.name): HTMLLIElement {
   const li = document.createElement("li");
   const name = document.createElement("span");
   name.className = "shop-name";
-  name.textContent = amount > 1 ? `${info.name} × ${amount}` : info.name;
+  name.textContent = amount > 1 ? `${label} × ${amount}` : label;
   const price = document.createElement("span");
   price.className = "shop-price";
   price.textContent = priceText;

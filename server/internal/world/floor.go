@@ -28,6 +28,8 @@ type floorItem struct {
 	subX, subY uint8 // position within the cell, 0-15
 	itemID     int
 	amount     int
+	cards      []int  // in dropped equipment
+	element    int    // a dropped forged weapon's element
 	owner      uint32 // player with first pick, until ownerUntil
 	ownerParty uint32 // ...shared with their party
 	ownerUntil time.Time
@@ -40,7 +42,7 @@ func (it *floorItem) packet(dropped bool) []byte {
 
 // dropItem puts items on the ground on a random walkable cell next to (x, y),
 // like eAthena's map_searchrandfreecell around the corpse.
-func (w *World) dropItem(m *mapInstance, x, y, itemID, amount int, owner uint32, now time.Time) {
+func (w *World) dropItem(m *mapInstance, x, y, itemID, amount int, owner uint32, now time.Time) *floorItem {
 	cx, cy := x, y
 	for range 8 {
 		tx, ty := x-1+w.rng.IntN(3), y-1+w.rng.IntN(3)
@@ -61,6 +63,7 @@ func (w *World) dropItem(m *mapInstance, x, y, itemID, amount int, owner uint32,
 	}
 	m.items[it.id] = it
 	w.broadcast(m, it.packet(true))
+	return it
 }
 
 func (w *World) removeFloorItem(it *floorItem) {
@@ -138,7 +141,11 @@ func (w *World) pickUp(p *Player, it *floorItem, now time.Time) {
 		p.out.Send(proto.Message("You can't pick that up yet: it belongs to whoever won the fight."))
 		return
 	}
-	if err := p.data.PickUp(it.itemID, it.amount); err != nil {
+	pick := func() error { return p.data.PickUp(it.itemID, it.amount) }
+	if len(it.cards) > 0 || it.element != game.ElemNeutral {
+		pick = func() error { return p.data.PickUpUnique(it.itemID, it.cards, it.element) }
+	}
+	if err := pick(); err != nil {
 		p.out.Send(proto.Message(fmt.Sprintf("You can't carry %s: %s.", name, messageFor(err))))
 		return
 	}
@@ -160,11 +167,13 @@ func (w *World) DropItem(id uint32, index, amount int) error {
 		if p.room != nil {
 			return errCantUseNow
 		}
-		itemID, err := p.data.Drop(index, amount)
+		dropped, err := p.data.Drop(index, amount)
 		if err != nil {
 			return err
 		}
-		w.dropItem(p.m, p.x, p.y, itemID, amount, 0, time.Now())
+		if it := w.dropItem(p.m, p.x, p.y, dropped.ItemID, amount, 0, time.Now()); it != nil {
+			it.cards, it.element = dropped.Cards, dropped.Element
+		}
 		return nil
 	})
 }

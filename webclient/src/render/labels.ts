@@ -43,6 +43,18 @@ export class NameLabels {
     return el;
   }
 
+  /** A vending stall's shop sign over the vendor's head; clicking it opens the shop. */
+  createVendSign(title: string, onClick: () => void): HTMLElement {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "vend-sign";
+    el.textContent = title;
+    el.title = "Click to see what's for sale";
+    el.addEventListener("click", onClick);
+    this.root.append(el);
+    return el;
+  }
+
   create(name: string, kind: "self" | "player" | "npc" | "monster" | "item"): HTMLElement {
     const el = document.createElement("div");
     el.className = `name-label ${kind}`;

@@ -43,14 +43,14 @@ maps, then the monster, NPC and item files their generated content uses
 (`tools/extract_world.py` reads them from the server's Go data files):
 
 ```bash
-for m in prontera izlude geffen payon alberta prt_castle prt_fild08 prt_fild05 prt_fild06 gef_fild04 gef_fild00 gef_fild07 pay_arche pay_fild01 pay_fild08 pay_gld pay_fild03 prt_fild07 moc_fild12 pay_dun00; do python3 tools/grf_extract.py ro-client/data.grf ro-client --map $m; done
+for m in prontera izlude geffen payon alberta prt_castle prt_fild08 prt_fild05 prt_fild06 gef_fild04 gef_fild00 gef_fild07 pay_arche pay_fild01 pay_fild08 pay_gld pay_fild03 prt_fild07 moc_fild12 pay_dun00 pay_dun01 pay_dun02 pay_dun03 pay_fild07 anthell01 orcsdun01 orcsdun02; do python3 tools/grf_extract.py ro-client/data.grf ro-client --map $m; done
 python3 tools/extract_world.py
 ```
 
 **Tables** (item and skill names and descriptions, map names, BGM per map):
 
 ```bash
-for t in idnum2itemdisplaynametable idnum2itemresnametable idnum2itemdesctable skillnametable skilldesctable mapnametable mp3nametable fogparametertable; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\$t.txt"; done
+for t in idnum2itemdisplaynametable idnum2itemresnametable idnum2itemdesctable skillnametable skilldesctable mapnametable mp3nametable fogparametertable cardprefixnametable cardpostfixnametable; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\$t.txt"; done
 ```
 
 **Appearance** (male and female: the 19 heads with their 9 hair colour palettes

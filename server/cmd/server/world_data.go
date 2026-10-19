@@ -9,7 +9,7 @@ import (
 )
 
 // cityMaps are the maps beyond Morroc: each city and its land exits.
-var cityMaps = []string{"prontera", "izlude", "geffen", "payon", "alberta", "prt_castle", "prt_fild08", "prt_fild05", "prt_fild06", "gef_fild04", "gef_fild00", "gef_fild07", "pay_arche", "pay_fild01", "pay_fild08", "pay_gld", "pay_fild03", "prt_fild07", "moc_fild12", "pay_dun00"}
+var cityMaps = []string{"prontera", "izlude", "geffen", "payon", "alberta", "prt_castle", "prt_fild08", "prt_fild05", "prt_fild06", "gef_fild04", "gef_fild00", "gef_fild07", "pay_arche", "pay_fild01", "pay_fild08", "pay_gld", "pay_fild03", "prt_fild07", "moc_fild12", "pay_dun00", "pay_dun01", "pay_dun02", "pay_dun03", "pay_fild07", "anthell01", "orcsdun01", "orcsdun02"}
 
 // cityWarps link the cities to their fields (and Morroc's fields, if any).
 var cityWarps = []world.Warp{
@@ -23,12 +23,26 @@ var cityWarps = []world.Warp{
 	{Map: "izlude", X: 30, Y: 78, SpanX: 3, SpanY: 3, DestMap: "prt_fild08", DestX: 367, DestY: 212},
 	{Map: "moc_fild12", X: 159, Y: 381, SpanX: 2, SpanY: 2, DestMap: "morocc", DestX: 160, DestY: 20},
 	{Map: "morocc", X: 160, Y: 17, SpanX: 2, SpanY: 2, DestMap: "moc_fild12", DestX: 159, DestY: 378},
+	{Map: "orcsdun01", X: 183, Y: 8, SpanX: 4, SpanY: 2, DestMap: "orcsdun02", DestX: 21, DestY: 185},
+	{Map: "orcsdun02", X: 21, Y: 188, SpanX: 8, SpanY: 2, DestMap: "orcsdun01", DestX: 183, DestY: 11},
 	{Map: "pay_arche", X: 36, Y: 131, SpanX: 2, SpanY: 2, DestMap: "pay_dun00", DestX: 21, DestY: 183},
 	{Map: "pay_arche", X: 81, Y: 18, SpanX: 5, SpanY: 2, DestMap: "payon", DestX: 175, DestY: 185},
 	{Map: "pay_dun00", X: 21, Y: 186, SpanX: 2, SpanY: 2, DestMap: "pay_arche", DestX: 39, DestY: 131},
+	{Map: "pay_dun00", X: 184, Y: 33, SpanX: 2, SpanY: 7, DestMap: "pay_dun01", DestX: 19, DestY: 33},
+	{Map: "pay_dun01", X: 15, Y: 33, SpanX: 2, SpanY: 6, DestMap: "pay_dun00", DestX: 181, DestY: 33},
+	{Map: "pay_dun01", X: 286, Y: 25, SpanX: 2, SpanY: 7, DestMap: "pay_dun02", DestX: 19, DestY: 63},
+	{Map: "pay_dun02", X: 16, Y: 63, SpanX: 2, SpanY: 7, DestMap: "pay_dun01", DestX: 283, DestY: 28},
+	{Map: "pay_dun02", X: 137, Y: 128, SpanX: 4, SpanY: 1, DestMap: "pay_dun03", DestX: 155, DestY: 159},
+	{Map: "pay_dun03", X: 155, Y: 161, SpanX: 2, SpanY: 1, DestMap: "pay_dun02", DestX: 137, DestY: 126},
 	{Map: "pay_fild01", X: 333, Y: 360, SpanX: 5, SpanY: 3, DestMap: "payon", DestX: 90, DestY: 26},
+	{Map: "pay_fild01", X: 379, Y: 201, SpanX: 2, SpanY: 6, DestMap: "pay_fild07", DestX: 23, DestY: 207},
+	{Map: "pay_fild03", X: 172, Y: 281, SpanX: 5, SpanY: 2, DestMap: "pay_fild07", DestX: 167, DestY: 20},
 	{Map: "pay_fild03", X: 392, Y: 63, SpanX: 2, SpanY: 7, DestMap: "alberta", DestX: 19, DestY: 233},
+	{Map: "pay_fild07", X: 16, Y: 200, SpanX: 3, SpanY: 3, DestMap: "pay_fild01", DestX: 371, DestY: 205},
+	{Map: "pay_fild07", X: 163, Y: 17, SpanX: 5, SpanY: 2, DestMap: "pay_fild03", DestX: 177, DestY: 275},
+	{Map: "pay_fild07", X: 280, Y: 382, SpanX: 4, SpanY: 2, DestMap: "pay_fild08", DestX: 160, DestY: 19},
 	{Map: "pay_fild08", X: 17, Y: 75, SpanX: 2, SpanY: 4, DestMap: "payon", DestX: 186, DestY: 69},
+	{Map: "pay_fild08", X: 160, Y: 16, SpanX: 4, SpanY: 2, DestMap: "pay_fild07", DestX: 280, DestY: 379},
 	{Map: "pay_gld", X: 374, Y: 149, SpanX: 1, SpanY: 1, DestMap: "payon", DestX: 20, DestY: 142},
 	{Map: "payon", X: 16, Y: 142, SpanX: 1, SpanY: 1, DestMap: "pay_gld", DestX: 370, DestY: 149},
 	{Map: "payon", X: 90, Y: 22, SpanX: 3, SpanY: 2, DestMap: "pay_fild01", DestX: 333, DestY: 356},
@@ -79,12 +93,216 @@ var cityWarps = []world.Warp{
 
 // citySpawns are the 2004 field spawns (npc/mobs/fields/).
 var citySpawns = []world.Spawn{
+	{Map: "anthell01", MobID: 1121, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Giearth
+	{Map: "anthell01", MobID: 1176, Count: 10}, // Vitata
+	{Map: "anthell01", MobID: 1160, Count: 50}, // Piere
+	{Map: "anthell01", MobID: 1105, Count: 40}, // Deniro
+	{Map: "anthell01", MobID: 1095, Count: 25}, // Andre
+	{Map: "anthell01", MobID: 1005, Count: 20}, // Familiar
+	{Map: "anthell01", X: 100, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 101, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 102, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 102, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 103, Y: 120, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 103, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 104, Y: 120, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 104, Y: 122, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 104, Y: 123, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 105, Y: 124, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond}, // Ant Egg
+	{Map: "anthell01", X: 28, Y: 262, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 28, Y: 263, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 28, Y: 264, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 28, Y: 265, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 28, Y: 266, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 29, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 29, Y: 262, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 29, Y: 263, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 29, Y: 264, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 29, Y: 265, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 29, Y: 266, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 187, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 190, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 195, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 198, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 261, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 262, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 263, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 264, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 30, Y: 265, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 190, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 194, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 195, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 198, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 262, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 263, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 31, Y: 264, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 187, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 189, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 196, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 197, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 198, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 32, Y: 263, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 33, Y: 195, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 33, Y: 196, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 35, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 36, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 36, Y: 187, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 37, Y: 183, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 37, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 38, Y: 183, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 38, Y: 184, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 38, Y: 186, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 168, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 265, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 266, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 267, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 268, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 269, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 40, Y: 270, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 165, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 168, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 265, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 266, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 267, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 268, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 41, Y: 269, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 42, Y: 165, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 42, Y: 166, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 42, Y: 167, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 42, Y: 168, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 43, Y: 165, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 43, Y: 166, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 44, Y: 165, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 44, Y: 166, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 45, Y: 165, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 97, Y: 123, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 97, Y: 124, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 97, Y: 125, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 97, Y: 126, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 97, Y: 127, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 98, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 98, Y: 127, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 99, Y: 121, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "anthell01", X: 99, Y: 127, SpanX: 0, SpanY: 0, MobID: 1097, Count: 1, Delay: 60000 * time.Millisecond, Variance: 30000 * time.Millisecond},  // Ant Egg
+	{Map: "orcsdun01", MobID: 1152, Count: 10, Delay: 30000 * time.Millisecond, Variance: 60000 * time.Millisecond},                                    // Orc Skeleton
+	{Map: "orcsdun01", MobID: 1153, Count: 70, Delay: 3000 * time.Millisecond, Variance: 5000 * time.Millisecond},                                      // Orc Zombie
+	{Map: "orcsdun01", MobID: 1111, Count: 5},  // Drainliar
+	{Map: "orcsdun01", MobID: 1042, Count: 10}, // Steel ChonChon
+	{Map: "orcsdun01", MobID: 1005, Count: 15}, // Familiar
+	{Map: "orcsdun01", X: 167, Y: 133, SpanX: 5, SpanY: 5, MobID: 1084, Count: 5, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond}, // Black Mushroom
+	{Map: "orcsdun01", X: 67, Y: 34, SpanX: 5, SpanY: 5, MobID: 1084, Count: 5, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond},   // Black Mushroom
+	{Map: "orcsdun01", MobID: 1082, Count: 5, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond},                                      // White Plant
+	{Map: "orcsdun02", MobID: 1177, Count: 50, Delay: 3000 * time.Millisecond, Variance: 5000 * time.Millisecond},                                        // Zenorc
+	{Map: "orcsdun02", MobID: 1152, Count: 50, Delay: 3000 * time.Millisecond, Variance: 5000 * time.Millisecond},                                        // Orc Skeleton
+	{Map: "orcsdun02", MobID: 1111, Count: 20}, // Drainliar
+	{Map: "orcsdun02", MobID: 1042, Count: 20}, // Steel ChonChon
+	{Map: "orcsdun02", MobID: 1082, Count: 5, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond},   // White Plant
+	{Map: "orcsdun02", MobID: 1189, Count: 5, Delay: 1800000 * time.Millisecond, Variance: 900000 * time.Millisecond}, // Orc Archer
+	{Map: "orcsdun02", MobID: 1084, Count: 5, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond},  // Black Mushroom
 	{Map: "pay_dun00", MobID: 1015, Count: 20}, // Zombie
 	{Map: "pay_dun00", MobID: 1031, Count: 15}, // Poporing
 	{Map: "pay_dun00", MobID: 1076, Count: 35}, // Skeleton
 	{Map: "pay_dun00", MobID: 1005, Count: 15}, // Familiar
 	{Map: "pay_dun00", X: 140, Y: 140, SpanX: 5, SpanY: 5, MobID: 1084, Count: 3, Delay: 360000 * time.Millisecond, Variance: 180000 * time.Millisecond},   // Black Mushroom
 	{Map: "pay_dun00", X: 140, Y: 140, SpanX: 35, SpanY: 35, MobID: 1078, Count: 15, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond}, // Red Plant
+	{Map: "pay_dun01", MobID: 1028, Count: 60}, // Skeleton Soldier
+	{Map: "pay_dun01", MobID: 1016, Count: 30}, // Skeleton Archer
+	{Map: "pay_dun01", MobID: 1111, Count: 10}, // Drainliar
+	{Map: "pay_dun01", MobID: 1116, Count: 20}, // Eggyra
+	{Map: "pay_dun01", X: 235, Y: 54, SpanX: 10, SpanY: 10, MobID: 1084, Count: 5, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond}, // Black Mushroom
+	{Map: "pay_dun01", MobID: 1078, Count: 10, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond},                                      // Red Plant
+	{Map: "pay_dun02", MobID: 1188, Count: 30}, // Bon Gun
+	{Map: "pay_dun02", MobID: 1016, Count: 20, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond}, // Skeleton Archer
+	{Map: "pay_dun02", MobID: 1026, Count: 40}, // Munak
+	{Map: "pay_dun02", MobID: 1028, Count: 15, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond},                                     // Skeleton Soldier
+	{Map: "pay_dun02", X: 107, Y: 190, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 320000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 108, Y: 191, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 332000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 109, Y: 192, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 374000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 109, Y: 193, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 110, Y: 190, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 110, Y: 194, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 111, Y: 191, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 112, Y: 192, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 113, Y: 193, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 113, Y: 194, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 319000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 116, Y: 190, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 326000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 116, Y: 196, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 116, Y: 199, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 306000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 116, Y: 205, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 345000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 117, Y: 191, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 117, Y: 197, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 314000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 117, Y: 200, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 275000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 117, Y: 206, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 302000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 118, Y: 192, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 285000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 118, Y: 198, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 312000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 118, Y: 201, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 118, Y: 207, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 332000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 119, Y: 196, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 315000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 119, Y: 199, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 119, Y: 205, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 324000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 120, Y: 194, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 120, Y: 200, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 303000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 120, Y: 203, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 121, Y: 200, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 333000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 122, Y: 197, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 321000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", X: 122, Y: 200, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Hydra
+	{Map: "pay_dun02", MobID: 1031, Count: 10}, // Poporing
+	{Map: "pay_dun02", MobID: 1020, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},                                       // Mandragora
+	{Map: "pay_dun02", MobID: 1180, Count: 1, Delay: 3600000 * time.Millisecond, Variance: 1800000 * time.Millisecond},                                     // Nine-Tail
+	{Map: "pay_dun02", X: 111, Y: 199, SpanX: 10, SpanY: 10, MobID: 1084, Count: 7, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond}, // Black Mushroom
+	{Map: "pay_dun02", X: 37, Y: 243, SpanX: 0, SpanY: 0, MobID: 1084, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},    // Black Mushroom
+	{Map: "pay_dun02", MobID: 1078, Count: 9, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},                                       // Red Plant
+	{Map: "pay_dun03", MobID: 1180, Count: 2},  // Nine-Tail
+	{Map: "pay_dun03", MobID: 1277, Count: 3},  // Greatest General
+	{Map: "pay_dun03", MobID: 1170, Count: 40}, // Sohee
+	{Map: "pay_dun03", X: 115, Y: 190, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 219, Y: 185, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 219, Y: 244, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 228, Y: 185, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 230, Y: 244, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 240, Y: 244, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 243, Y: 220, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond}, // Sohee
+	{Map: "pay_dun03", X: 71, Y: 243, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},  // Sohee
+	{Map: "pay_dun03", X: 85, Y: 178, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},  // Sohee
+	{Map: "pay_dun03", X: 86, Y: 248, SpanX: 0, SpanY: 0, MobID: 1170, Count: 3, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},  // Sohee
+	{Map: "pay_dun03", MobID: 1188, Count: 3}, // Bon Gun
+	{Map: "pay_dun03", MobID: 1026, Count: 3}, // Munak
+	{Map: "pay_dun03", X: 57, Y: 65, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 58, Y: 69, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 59, Y: 64, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 60, Y: 68, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 62, Y: 67, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 63, Y: 70, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 64, Y: 66, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 66, Y: 63, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 66, Y: 65, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 66, Y: 73, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 67, Y: 69, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 67, Y: 71, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 68, Y: 64, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 68, Y: 72, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 69, Y: 68, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 71, Y: 64, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 71, Y: 67, SpanX: 0, SpanY: 0, MobID: 1068, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Hydra
+	{Map: "pay_dun03", X: 126, Y: 131, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 126, Y: 132, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 126, Y: 133, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 126, Y: 134, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 126, Y: 135, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 179, Y: 130, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 179, Y: 131, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 179, Y: 132, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 179, Y: 133, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 179, Y: 134, SpanX: 0, SpanY: 0, MobID: 1020, Count: 1, Delay: 300000 * time.Millisecond, Variance: 100000 * time.Millisecond},   // Mandragora
+	{Map: "pay_dun03", X: 138, Y: 42, SpanX: 0, SpanY: 0, MobID: 1079, Count: 1, Delay: 600000 * time.Millisecond, Variance: 900000 * time.Millisecond},    // Blue Plant
+	{Map: "pay_dun03", X: 88, Y: 35, SpanX: 0, SpanY: 0, MobID: 1081, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},     // Yellow Plant
+	{Map: "pay_dun03", X: 89, Y: 147, SpanX: 0, SpanY: 0, MobID: 1186, Count: 1, Delay: 3600000 * time.Millisecond, Variance: 1800000 * time.Millisecond},  // Giant Whisper
+	{Map: "pay_dun03", X: 120, Y: 186, SpanX: 0, SpanY: 0, MobID: 1080, Count: 1, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},   // Green Plant
+	{Map: "pay_dun03", X: 228, Y: 61, SpanX: 40, SpanY: 40, MobID: 1078, Count: 16, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond}, // Red Plant
+	{Map: "pay_dun03", X: 49, Y: 264, SpanX: 0, SpanY: 6, MobID: 1082, Count: 2, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},    // White Plant
+	{Map: "pay_dun03", X: 225, Y: 62, SpanX: 6, SpanY: 12, MobID: 1082, Count: 3, Delay: 600000 * time.Millisecond, Variance: 300000 * time.Millisecond},   // White Plant
 	{Map: "gef_fild00", MobID: 1031, Count: 20}, // Poporing
 	{Map: "gef_fild00", MobID: 1008, Count: 20}, // Pupa
 	{Map: "gef_fild00", MobID: 1007, Count: 80}, // Fabre
@@ -139,6 +357,12 @@ var citySpawns = []world.Spawn{
 	{Map: "pay_fild03", MobID: 1002, Count: 30}, // Poring
 	{Map: "pay_fild03", X: 372, Y: 64, SpanX: 15, SpanY: 15, MobID: 1080, Count: 4, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond},   // Green Plant
 	{Map: "pay_fild03", X: 153, Y: 216, SpanX: 10, SpanY: 10, MobID: 1085, Count: 6, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond}, // Red Mushroom
+	{Map: "pay_fild07", MobID: 1060, Count: 30}, // Bigfoot
+	{Map: "pay_fild07", MobID: 1116, Count: 40}, // Eggyra
+	{Map: "pay_fild07", MobID: 1033, Count: 70}, // Elder Willow
+	{Map: "pay_fild07", MobID: 1031, Count: 20}, // Poporing
+	{Map: "pay_fild07", MobID: 1010, Count: 20}, // Willow
+	{Map: "pay_fild07", X: 171, Y: 331, SpanX: 20, SpanY: 20, MobID: 1080, Count: 8, Delay: 900000 * time.Millisecond, Variance: 450000 * time.Millisecond}, // Green Plant
 	{Map: "pay_fild08", MobID: 1014, Count: 50}, // Spore
 	{Map: "pay_fild08", MobID: 1010, Count: 70}, // Willow
 	{Map: "pay_fild08", MobID: 1008, Count: 20}, // Pupa
@@ -253,6 +477,36 @@ var cityNPCs = []world.NPC{
 	{ID: 54003, Name: "Weapon Dealer", Sprite: "4_m_04", Map: "pay_arche", X: 40, Y: 126, Dir: 0, Shop: []int{1101, 1104, 1107, 1110, 1113, 1116, 1119, 1122, 1123, 1126, 1151, 1154, 1157, 1160, 1201, 1204, 1207, 1210, 1213, 1216, 1219, 1222, 1301, 1351, 1354, 1357, 1360, 1401, 1404, 1407, 1410, 1451, 1454, 1457, 1460, 1463, 1501, 1504, 1507, 1510, 1513, 1516, 1519, 1522, 1601, 1604, 1607, 1610, 1701, 1704, 1707, 1710, 1713, 1714, 1750, 1751, 1752, 1753, 1770}, Price: 1},
 	{ID: 54004, Name: "Armor Dealer", Sprite: "4_m_barber", Map: "pay_arche", X: 44, Y: 126, Dir: 0, Shop: []int{2101, 2103, 2105, 2107, 2201, 2203, 2205, 2206, 2208, 2211, 2212, 2215, 2216, 2218, 2220, 2222, 2224, 2226, 2228, 2230, 2232, 2239, 2241, 2242, 2243, 2301, 2303, 2305, 2307, 2309, 2312, 2314, 2316, 2321, 2323, 2325, 2328, 2330, 2332, 2335, 2338, 2340, 2401, 2403, 2405, 2501, 2503, 2505, 2608, 2609, 2612, 2613, 2627, 2628}, Price: 1},
 	{ID: 54005, Name: "Reset Maid", Sprite: "4_f_maid", Map: "pay_arche", X: 52, Y: 137, Dir: 4, Kind: world.KindReset},
+	{ID: 54006, Name: "Training Guide", Sprite: "4_f_job_hunter", Map: "pay_arche", X: 56, Y: 137, Dir: 4, Kind: world.KindTraining,
+		Training: []world.TrainingRange{{Name: "Lv 1-10", Spots: []world.Teleport{{Name: "Prontera South Field (Poring, Lunatic)", Map: "prt_fild08", X: 170, Y: 375}, {Name: "Payon Forest (Willow, Spore)", Map: "pay_fild08", X: 20, Y: 74}, {Name: "Geffen Field (Poporing, Fabre)", Map: "gef_fild00", X: 46, Y: 199}}}, {Name: "Lv 10-20", Spots: []world.Teleport{{Name: "Rocker Field (Rocker)", Map: "prt_fild07", X: 380, Y: 186}, {Name: "Payon Cave 1 (Skeleton, Zombie)", Map: "pay_dun00", X: 21, Y: 183}, {Name: "Ant Hell 1 (Andre, Piere, Deniro)", Map: "anthell01", X: 35, Y: 262}}}, {Name: "Lv 20-30", Spots: []world.Teleport{{Name: "Payon Cave 2 (Skeleton Soldier, Skeleton Archer)", Map: "pay_dun01", X: 19, Y: 33}, {Name: "Orc Dungeon 1 (Orc Zombie)", Map: "orcsdun01", X: 32, Y: 170}, {Name: "Payon Field (Elder Willow, Eggyra)", Map: "pay_fild07", X: 23, Y: 207}}}, {Name: "Lv 30-40", Spots: []world.Teleport{{Name: "Payon Cave 3 (Munak, Bon Gun)", Map: "pay_dun02", X: 19, Y: 63}, {Name: "Payon Cave 4 (Sohee)", Map: "pay_dun03", X: 155, Y: 159}, {Name: "Orc Dungeon 2 (Zenorc, Orc Skeleton)", Map: "orcsdun02", X: 21, Y: 185}}}}},
+	{ID: 55001, Name: "Merchant", Map: "pay_arche", X: 45, Y: 122, Dir: 0, Vendor: &world.Vendor{Title: "Potions 20% off!", Job: 5, Female: true, Hair: 7, HairColor: 3,
+		Stock: []world.VendItem{{ItemID: 501, Price: 38}, {ItemID: 502, Price: 150}, {ItemID: 503, Price: 455}, {ItemID: 504, Price: 965}, {ItemID: 645, Price: 667}, {ItemID: 656, Price: 1157}}}},
+	{ID: 55002, Name: "Merchant", Map: "pay_arche", X: 49, Y: 122, Dir: 0, Vendor: &world.Vendor{Title: "Wings & Arrows cheap", Job: 5, Female: false, Hair: 4, HairColor: 1,
+		Stock: []world.VendItem{{ItemID: 601, Price: 45}, {ItemID: 602, Price: 222}, {ItemID: 1750, Price: 1}, {ItemID: 1770, Price: 1}, {ItemID: 1751, Price: 2}, {ItemID: 1752, Price: 2}}}},
+	{ID: 55003, Name: "Merchant", Map: "pay_arche", X: 53, Y: 122, Dir: 0, Vendor: &world.Vendor{Title: "Herbs and snacks", Job: 5, Female: true, Hair: 12, HairColor: 5,
+		Stock: []world.VendItem{{ItemID: 507, Price: 15}, {ItemID: 508, Price: 34}, {ItemID: 511, Price: 8}, {ItemID: 512, Price: 12}, {ItemID: 519, Price: 22}, {ItemID: 517, Price: 42}}}},
+	{ID: 55004, Name: "Blacksmith", Map: "pay_arche", X: 45, Y: 118, Dir: 0, Vendor: &world.Vendor{Title: "Fire weapons, forged today", Job: 10, Female: false, Hair: 2, HairColor: 6,
+		Stock: []world.VendItem{{ItemID: 1207, Price: 8460, Element: 3}, {ItemID: 1101, Price: 3560, Element: 3}, {ItemID: 1104, Price: 6040, Element: 3}, {ItemID: 1301, Price: 4620, Element: 3}, {ItemID: 1501, Price: 4790, Element: 3}}}},
+	{ID: 55005, Name: "Blacksmith", Map: "pay_arche", X: 49, Y: 118, Dir: 0, Vendor: &world.Vendor{Title: "Ice blades", Job: 10, Female: true, Hair: 9, HairColor: 2,
+		Stock: []world.VendItem{{ItemID: 1201, Price: 3220, Element: 1}, {ItemID: 1207, Price: 7760, Element: 1}, {ItemID: 1101, Price: 6000, Element: 1}, {ItemID: 1107, Price: 7990, Element: 1}, {ItemID: 1401, Price: 3940, Element: 1}}}},
+	{ID: 55006, Name: "Blacksmith", Map: "pay_arche", X: 53, Y: 118, Dir: 0, Vendor: &world.Vendor{Title: "Wind weapons", Job: 10, Female: false, Hair: 5, HairColor: 0,
+		Stock: []world.VendItem{{ItemID: 1204, Price: 6400, Element: 4}, {ItemID: 1210, Price: 12930, Element: 4}, {ItemID: 1104, Price: 6370, Element: 4}, {ItemID: 1116, Price: 7420, Element: 4}, {ItemID: 1351, Price: 10840, Element: 4}}}},
+	{ID: 55007, Name: "Blacksmith", Map: "pay_arche", X: 45, Y: 114, Dir: 0, Vendor: &world.Vendor{Title: "Earth weapons", Job: 10, Female: true, Hair: 14, HairColor: 4,
+		Stock: []world.VendItem{{ItemID: 1207, Price: 8110, Element: 2}, {ItemID: 1101, Price: 3270, Element: 2}, {ItemID: 1107, Price: 8350, Element: 2}, {ItemID: 1504, Price: 7180, Element: 2}, {ItemID: 1301, Price: 4320, Element: 2}}}},
+	{ID: 55008, Name: "Blacksmith", Map: "pay_arche", X: 49, Y: 114, Dir: 0, Vendor: &world.Vendor{Title: "Elemental daggers", Job: 10, Female: false, Hair: 11, HairColor: 7,
+		Stock: []world.VendItem{{ItemID: 1201, Price: 3810, Element: 3}, {ItemID: 1204, Price: 5440, Element: 1}, {ItemID: 1207, Price: 8810, Element: 4}, {ItemID: 1210, Price: 11940, Element: 2}}}},
+	{ID: 55009, Name: "Blacksmith", Map: "pay_arche", X: 53, Y: 114, Dir: 0, Vendor: &world.Vendor{Title: "Weapon clearance", Job: 10, Female: false, Hair: 3, HairColor: 8,
+		Stock: []world.VendItem{{ItemID: 1101, Price: 85}, {ItemID: 1104, Price: 1176}, {ItemID: 1107, Price: 2356}, {ItemID: 1116, Price: 1595}, {ItemID: 1201, Price: 43}, {ItemID: 1204, Price: 993}, {ItemID: 1207, Price: 1974}, {ItemID: 1210, Price: 7233}}}},
+	{ID: 55010, Name: "Merchant", Map: "pay_arche", X: 40, Y: 141, Dir: 4, Vendor: &world.Vendor{Title: "Armor sale", Job: 5, Female: true, Hair: 6, HairColor: 1,
+		Stock: []world.VendItem{{ItemID: 2301, Price: 8}, {ItemID: 2303, Price: 171}, {ItemID: 2305, Price: 810}, {ItemID: 2312, Price: 40473}, {ItemID: 2401, Price: 326}, {ItemID: 2403, Price: 3039}}}},
+	{ID: 55011, Name: "Merchant", Map: "pay_arche", X: 44, Y: 141, Dir: 4, Vendor: &world.Vendor{Title: "Shields & garments", Job: 5, Female: false, Hair: 8, HairColor: 3,
+		Stock: []world.VendItem{{ItemID: 2101, Price: 458}, {ItemID: 2103, Price: 12156}, {ItemID: 2501, Price: 856}, {ItemID: 2503, Price: 4541}}}},
+	{ID: 55012, Name: "Merchant", Map: "pay_arche", X: 48, Y: 141, Dir: 4, Vendor: &world.Vendor{Title: "Hats! Hats! Hats!", Job: 5, Female: true, Hair: 15, HairColor: 6,
+		Stock: []world.VendItem{{ItemID: 2220, Price: 892}, {ItemID: 2226, Price: 11383}, {ItemID: 2211, Price: 362}, {ItemID: 2208, Price: 703}, {ItemID: 2224, Price: 8964}, {ItemID: 2201, Price: 4730}}}},
+	{ID: 55013, Name: "Merchant", Map: "pay_arche", X: 44, Y: 145, Dir: 4, Vendor: &world.Vendor{Title: "Archer supply", Job: 5, Female: false, Hair: 1, HairColor: 2,
+		Stock: []world.VendItem{{ItemID: 1701, Price: 856}, {ItemID: 1704, Price: 2211}, {ItemID: 1750, Price: 1}, {ItemID: 1770, Price: 1}, {ItemID: 1751, Price: 2}, {ItemID: 1752, Price: 2}}}},
+	{ID: 55014, Name: "Merchant", Map: "pay_arche", X: 48, Y: 145, Dir: 4, Vendor: &world.Vendor{Title: "Mage & Acolyte corner", Job: 5, Female: true, Hair: 10, HairColor: 4,
+		Stock: []world.VendItem{{ItemID: 1601, Price: 42}, {ItemID: 1604, Price: 2211}, {ItemID: 1501, Price: 101}, {ItemID: 1504, Price: 1399}, {ItemID: 2501, Price: 846}, {ItemID: 503, Price: 494}}}},
 }
 
 // morroccDealerStock is Morroc's indoor 2004 dealer stock, by dealer name.

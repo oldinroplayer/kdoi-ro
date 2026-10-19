@@ -19,6 +19,10 @@ func (w *World) ClickNpc(id, npcID uint32) error {
 			p.out.Send(proto.Message("You are too far away."))
 			return
 		}
+		if n.Vendor != nil {
+			w.openVendor(p, n)
+			return
+		}
 		switch n.Kind {
 		case KindJobChange:
 			w.jobGuideTalk(p, n)
@@ -32,6 +36,9 @@ func (w *World) ClickNpc(id, npcID uint32) error {
 		case KindReset:
 			w.resetTalk(p, n)
 			return
+		case KindTraining:
+			w.trainingTalk(p, n)
+			return
 		}
 		if len(n.Shop) == 0 {
 			return
@@ -40,7 +47,7 @@ func (w *World) ClickNpc(id, npcID uint32) error {
 		for i, itemID := range n.Shop {
 			items[i] = proto.ShopItem{ItemID: itemID, Price: n.priceFor(p, itemID)}
 		}
-		p.out.Send(proto.ShopOpen(n.ID, n.Name, items, p.data.SellRate()))
+		p.out.Send(proto.ShopOpen(n.ID, n.Name, items, p.data.SellRate(), false))
 	})
 }
 
@@ -59,7 +66,7 @@ func (w *World) shopPlayer(id, npcID uint32) (*Player, *NPC) {
 	if p == nil {
 		return nil, nil
 	}
-	if p.dead || n == nil || len(n.Shop) == 0 || n.Map != p.m.name || chebyshev(p.x, p.y, n.X, n.Y) > shopRange {
+	if p.dead || n == nil || (len(n.Shop) == 0 && n.Vendor == nil) || n.Map != p.m.name || chebyshev(p.x, p.y, n.X, n.Y) > shopRange {
 		p.out.Send(proto.ShopResult(proto.ShopInvalid))
 		return nil, nil
 	}
@@ -81,7 +88,12 @@ func (w *World) Buy(id, npcID uint32, lines []proto.ShopLine) error {
 		for i, l := range lines {
 			order[i] = game.Purchase{ItemID: int(l.ItemID), Amount: int(l.Amount)}
 		}
+		before := len(p.data.Inventory)
 		err := p.data.Buy(order, func(itemID int) (int, bool) {
+			if n.Vendor != nil {
+				it, ok := n.Vendor.ware(itemID)
+				return it.Price, ok
+			}
 			for _, sold := range n.Shop {
 				if sold == itemID {
 					return n.priceFor(p, itemID), true
@@ -89,6 +101,9 @@ func (w *World) Buy(id, npcID uint32, lines []proto.ShopLine) error {
 			}
 			return 0, false
 		})
+		if err == nil && n.Vendor != nil {
+			stampElements(&p.data, n.Vendor, before)
+		}
 		switch {
 		case err == nil:
 			p.out.Send(proto.ShopResult(proto.ShopOK))
@@ -109,8 +124,12 @@ func (w *World) Buy(id, npcID uint32, lines []proto.ShopLine) error {
 // Sell sells inventory items to any shop NPC at half their price (more with Overcharge).
 func (w *World) Sell(id, npcID uint32, lines []proto.SellLine) error {
 	return w.do(func() {
-		p, _ := w.shopPlayer(id, npcID)
+		p, n := w.shopPlayer(id, npcID)
 		if p == nil {
+			return
+		}
+		if n.Vendor != nil { // stalls only sell
+			p.out.Send(proto.ShopResult(proto.ShopInvalid))
 			return
 		}
 		order := make([]game.Sale, len(lines))
@@ -195,6 +214,12 @@ func (w *World) update(id uint32, change func(*Player) error) error {
 
 func messageFor(err error) string {
 	switch {
+	case errors.Is(err, game.ErrNotACard):
+		return "That's not a card."
+	case errors.Is(err, game.ErrCardDoesntFit):
+		return "That card doesn't go in that kind of equipment."
+	case errors.Is(err, game.ErrNoFreeSlot):
+		return "That item has no free card slot."
 	case errors.Is(err, game.ErrLevelTooLow):
 		return "Your level is too low to equip that."
 	case errors.Is(err, game.ErrNotEquippable):
@@ -221,7 +246,7 @@ func messageFor(err error) string {
 func (w *World) sendInventory(p *Player) {
 	entries := make([]proto.InvEntry, len(p.data.Inventory))
 	for i, it := range p.data.Inventory {
-		entries[i] = proto.InvEntry{Index: it.Index, ItemID: it.ItemID, Amount: it.Amount, Equip: it.Equip}
+		entries[i] = proto.InvEntry{Index: it.Index, ItemID: it.ItemID, Amount: it.Amount, Equip: it.Equip, Cards: it.Cards, Element: it.Element}
 	}
 	p.out.Send(proto.Inventory(entries))
 }
@@ -246,4 +271,15 @@ func (w *World) sendStatus(p *Player) {
 		info.RaiseCosts[i] = game.RaiseCost(v)
 	}
 	p.out.Send(proto.Status(info))
+}
+
+// Compound puts a card into a slot of unequipped equipment, for good.
+func (w *World) Compound(id uint32, cardIndex, equipIndex int) error {
+	return w.update(id, func(p *Player) error {
+		if err := p.data.Compound(cardIndex, equipIndex); err != nil {
+			return err
+		}
+		p.out.Send(proto.Message("The card was compounded."))
+		return nil
+	})
 }

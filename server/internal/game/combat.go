@@ -59,6 +59,7 @@ func (c *CharData) attackMob(m *MobDef, r Rand, pct, flat, hitBonus, element int
 		dmg = dmg*(100-min(m.Def, 99))/100 - m.Stats[VIT]
 	}
 	dmg = dmg*pct/100 + flat
+	dmg = d.Cards.cardDamage(dmg, m) // cards against its race and element
 	return Hit{Damage: applyElement(max(dmg, 1), m.ElementFix(element)), Crit: crit}
 }
 
@@ -70,6 +71,7 @@ func (m *MobDef) AttackPlayer(c *CharData, r Rand) Hit {
 	}
 	dmg := between(r, m.Atk1, m.Atk2)
 	dmg = dmg*(100-min(d.Def, 99))/100 - d.Def2 - c.DivineProtection(m)
+	dmg = d.Cards.cardDefense(dmg, m) // cards against its race and element
 	return Hit{Damage: max(dmg, 1)}
 }
 
@@ -84,10 +86,10 @@ func (c *CharData) AttackMotion() int { return (200 - c.Derive().Aspd) * 10 }
 // (every 6 s for HP and 8 s for SP, standing).
 func (c *CharData) RegenHP() int {
 	d := c.Derive()
-	return max(1, d.MaxHP/200) + c.EffectiveStats()[VIT]/5 + c.skillRegenHP(d.MaxHP)
+	return (max(1, d.MaxHP/200)+c.EffectiveStats()[VIT]/5)*(100+d.Cards.HPRegenRate)/100 + c.skillRegenHP(d.MaxHP)
 }
 
 func (c *CharData) RegenSP() int {
 	d := c.Derive()
-	return 1 + d.MaxSP/100 + c.EffectiveStats()[INT]/6 + c.skillRegenSP(d.MaxSP)
+	return (1+d.MaxSP/100+c.EffectiveStats()[INT]/6)*(100+d.Cards.SPRegenRate)/100 + c.skillRegenSP(d.MaxSP)
 }

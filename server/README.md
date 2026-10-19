@@ -56,12 +56,16 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
   `exp <name> <base> [job]` gives an online character EXP live (with level ups
   and points), `zeny <name> <amount>` gives (or, negative, takes) zeny,
   `reset <name> [stats|skills|all]` gives back their stat and/or skill points
-  (the Reset Maid at the Payon Cave camp does the same for free),
+  (the Reset Maid at the Payon Cave camp does the same for free, and also
+  switches 1st jobs; the Training Guide beside her warps players to a map for
+  their level range, from `TRAINING` in tools/gen_world.py),
   `warpall <map> <x> <y>` moves every online player there now and every saved
   character there for their next login, `saveall <map> <x> <y>` sets everyone's
   respawn point there, `exprate [rate]` shows or sets the monster EXP rate
   live (`exprate 2` = x2, `1.5` works too; `-exp-rate 3` starts at x3),
   `droprate [rate]` does the same for monster drop chances,
+  `fakeplayers on|off` brings 15-20 fake players (levelled and geared for
+  the map, wandering and fighting) to each map a real player is on,
   `chatmode server|local` makes public chat reach everyone online or only
   players within 14 cells (the default), `update` restarts into a newer build
   without logging anyone out (below),
@@ -143,6 +147,7 @@ Flags:
 | `-bgm` | (none) | music folder served at `/bgm` when `-web` is set |
 | `-origins` | `localhost:*,127.0.0.1:*` | browser origins allowed to connect |
 | `-exp-rate` | `1` | monster EXP multiplier (the console's `exprate` changes it live) |
+| `-fake-players` | off | fill maps that real players are on with 15-20 fake players (the console's `fakeplayers on/off` toggles it live) |
 | `-drop-rate` | `1` | monster drop chance multiplier, capped at a sure drop (the console's `droprate` changes it live) |
 | `-pidfile` | (none) | write the process ID here, so `./build.sh <target> --update` can signal it |
 
@@ -210,6 +215,7 @@ Coordinates are map cells, `y = 0` at the south edge.
 | `0x0022` | PartyChat | `text str` |
 | `0x0023` | PartyEXP | `even u8` (leader only) |
 | `0x0024` | Resume | `token str` — instead of Login, after a ServerUpdating (one use, 2 minutes) |
+| `0x0025` | Compound | `card u16`, `equip u16` (inventory indices) — put the card into unequipped equipment of its kind with a free slot, for good |
 | `0x001B` | SetAppearance | `style u8` (1–19), `color u8` (0–8), `female u8` — change hairstyle, hair colour and gender; everyone on the map gets a PlayerLook |
 | `0x000F` | UseSkill | `skillId u16`, `level u16` (0 = highest learned), `targetId u32` (ignored for self skills) |
 | `0x000D` | Turn | `dir u8` — face a direction without moving (0 N, 1 NW … 7 NE); ignored while walking |
@@ -230,9 +236,9 @@ unreachable within 32 steps.
 | `0x8006` | PlayerStop | `id u32`, `x u16`, `y u16` — a unit stopped walking here (e.g. reached attack range) |
 | `0x8007` | WarpPortal | `x u16`, `y u16` — a warp on the current map |
 | `0x8008` | NpcAppear | `id u32`, `name str`, `sprite str` (under `data/sprite/npc/`), `x u16`, `y u16`, `dir u8` |
-| `0x8009` | ShopOpen | `npcId u32`, `npcName str`, `count u16`, then `count` × (`itemId u16`, `price u32`, after Discount), then `sellRate u16` (percent of half price paid when selling; above 100 with Overcharge) |
+| `0x8009` | ShopOpen | `npcId u32`, `npcName str`, `count u16`, then `count` × (`itemId u16`, `price u32`, after Discount, `element u8` a vendor's forged weapon's element), then `sellRate u16` (percent of half price paid when selling; above 100 with Overcharge), `buyOnly u8` (1 for a vending stall: it doesn't buy) |
 | `0x800A` | ShopResult | `code u8` — 0 ok, 1 not enough zeny, 2 overweight, 3 inventory full, 4 invalid / too far, 5 sold |
-| `0x800B` | Inventory | `count u16`, then `count` × (`index u16`, `itemId u16`, `amount u16`, `equip u16` slot mask, 0 = not worn) |
+| `0x800B` | Inventory | `count u16`, then `count` × (`index u16`, `itemId u16`, `amount u16`, `equip u16` slot mask, 0 = not worn, `cards u8`, then `cards` × card `itemId u16`, `element u8` a forged weapon's element, 0 = none) |
 | `0x800C` | Status | `baseLv u16`, `jobLv u16`, 6 × `stat u8`, 6 × `raiseCost u8`, `statusPoints u16`, `zeny u32`, then u16 each: `hp maxHp sp maxSp atk atk2 matkMin matkMax def def2 mdef mdef2 hit flee flee2 crit aspd`, then u32 each: `weight maxWeight baseExp baseNext jobExp jobNext` (next = 0 at the cap), then `job u16` and 6 × `jobBonus u8` (STR..LUK) |
 | `0x800D` | Message | `text str` — a notice for the player (e.g. why an action failed, loot) |
 | `0x800E` | MonsterAppear | `id u32`, `mobId u16`, `name str`, `sprite str` (under `data/sprite/몬스터/`), `x u16`, `y u16`, `dir u8`, `speed u16` |
@@ -268,6 +274,7 @@ unreachable within 32 steps.
 | `0x802D` | PlayerSpeed | `id u32`, `speed u16` (ms per straight cell) — a player's walk speed changed (Increase AGI: 25% faster while it lasts) |
 | `0x802E` | ServerUpdating | `wait u16` (seconds), `token str` — the server is restarting into a new build; the connection then closes with code 4000. Wait for the server to answer again, reload and send Resume |
 | `0x802F` | Effect | `id u32`, `kind u8` — a one-off effect on a unit: `1` teleporting away (Fly/Butterfly Wing) |
+| `0x8030` | VendorAppear | `id u32`, `name str`, `title str` (its shop sign), `job u16`, `x u16`, `y u16`, `dir u8`, then the look (8 × `u16`) — a vending stall: an NPC drawn as a sitting character of that job; clicking it (NpcClick) opens its wares |
 | `0x8018` | SkillUse | `src u32`, `target u32`, `skillId u16`, `level u8` — a skill went off (its effect follows, e.g. Heal) |
 
 LoginResult codes: `0` logged in, `1` character created, `2` wrong password,

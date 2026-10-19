@@ -42,12 +42,22 @@ export function hideTooltip(): void {
 export function itemCell(
   item: ItemInfo,
   amount: number,
-  opts: { onActivate?: () => void; label?: string; action?: string; dragData?: string } = {},
+  opts: {
+    onActivate?: () => void;
+    label?: string;
+    action?: string;
+    dragData?: string;
+    /** The full name (with cards and slots, from ItemDb.label). */
+    name?: string;
+    /** For equipment with slots: the cards in it, for the info window. */
+    cards?: { slots: number; names: string[] };
+  } = {},
 ): HTMLElement {
   const cell = document.createElement("button");
   cell.type = "button";
   cell.className = "item-cell";
-  const name = amount > 1 ? `${item.name} × ${amount}` : item.name;
+  const full = opts.name ?? item.name;
+  const name = amount > 1 ? `${full} × ${amount}` : full;
   cell.setAttribute("aria-label", opts.label ?? name);
 
   const img = document.createElement("img");
@@ -73,7 +83,7 @@ export function itemCell(
   cell.addEventListener("contextmenu", (ev) => {
     ev.preventDefault();
     hideTooltip();
-    showItemInfo(item);
+    showItemInfo(item, full, opts.cards);
   });
   if (opts.dragData) makeDraggable(cell, opts.dragData);
   if (opts.onActivate) {
@@ -108,8 +118,15 @@ export function makeDraggable(el: HTMLElement, data: string): void {
 
 let infoWindow: GameWindow | null = null;
 
-/** The info window: a picture, a title and an RO-formatted description. */
-export function showInfo(title: string, art: Promise<string>, description: string, artClass = "item-info-art"): void {
+/** The info window: a picture, a title and an RO-formatted description,
+ * plus (for equipment with slots) its card slots. */
+export function showInfo(
+  title: string,
+  art: Promise<string>,
+  description: string,
+  artClass = "item-info-art",
+  cards?: { slots: number; names: string[] },
+): void {
   infoWindow ??= new GameWindow("item-info", "Info", { x: 420, y: 120, width: 300 });
   const body = infoWindow.body;
   body.replaceChildren();
@@ -132,9 +149,22 @@ export function showInfo(title: string, art: Promise<string>, description: strin
   desc.className = "item-info-desc";
   renderDescription(description || "No description.", desc);
   body.append(head, desc);
+  if (cards && cards.slots > 0) {
+    // One line per slot, like the client's card slots: the card, or empty.
+    const list = document.createElement("ul");
+    list.className = "item-info-cards";
+    list.setAttribute("aria-label", "Card slots");
+    for (let i = 0; i < cards.slots; i++) {
+      const li = document.createElement("li");
+      li.textContent = cards.names[i] ?? "Empty slot";
+      if (!cards.names[i]) li.className = "empty";
+      list.append(li);
+    }
+    body.append(list);
+  }
   infoWindow.open();
 }
 
-export function showItemInfo(item: ItemInfo): void {
-  showInfo(item.name, itemIllustration(item), item.description);
+export function showItemInfo(item: ItemInfo, title = item.name, cards?: { slots: number; names: string[] }): void {
+  showInfo(title, itemIllustration(item), item.description, "item-info-art", cards);
 }

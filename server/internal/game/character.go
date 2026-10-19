@@ -43,6 +43,11 @@ type InvItem struct {
 	ItemID int    `json:"item_id"`
 	Amount int    `json:"amount"`
 	Equip  uint16 `json:"equip,omitempty"`
+	// Cards compounded into this equipment, in slot order.
+	Cards []int `json:"cards,omitempty"`
+	// Element is a forged weapon's element (a Blacksmith's Fire Main
+	// Gauche...); 0 for an ordinary item.
+	Element int `json:"element,omitempty"`
 }
 
 // CharData is everything about a character that persists and that the world
@@ -394,19 +399,34 @@ func (c *CharData) PickUp(itemID, amount int) error {
 	return nil
 }
 
-// Drop takes items out of the inventory to put them on the ground. Worn
+// Drop takes items out of the inventory to put them on the ground; the
+// returned entry carries what makes it unique (cards, forged element). Worn
 // equipment has to be taken off first.
-func (c *CharData) Drop(index, amount int) (itemID int, err error) {
+func (c *CharData) Drop(index, amount int) (InvItem, error) {
 	it := c.entry(index)
 	if it == nil || amount <= 0 || amount > it.Amount {
-		return 0, ErrNoSuchItem
+		return InvItem{}, ErrNoSuchItem
 	}
 	if it.Equip != 0 {
-		return 0, ErrEquipped
+		return InvItem{}, ErrEquipped
 	}
-	itemID = it.ItemID
+	dropped := InvItem{ItemID: it.ItemID, Amount: amount, Cards: it.Cards, Element: it.Element}
 	c.removeAmount(index, amount)
-	return itemID, nil
+	return dropped, nil
+}
+
+// PickUpUnique picks up one piece of equipment with cards or a forged
+// element (from the ground or a vendor), keeping them.
+func (c *CharData) PickUpUnique(itemID int, cards []int, element int) error {
+	if err := c.PickUp(itemID, 1); err != nil {
+		return err
+	}
+	if len(cards) > 0 || element != ElemNeutral {
+		// PickUp appended a new entry for the (unstackable) equipment.
+		last := &c.Inventory[len(c.Inventory)-1]
+		last.Cards, last.Element = append([]int(nil), cards...), element
+	}
+	return nil
 }
 
 // Equip wears the item at index, taking off whatever occupied its slot.
@@ -445,6 +465,8 @@ func (c *CharData) Unequip(index int) error {
 
 // Derived are the computed battle stats shown in the status window.
 type Derived struct {
+	// Cards is what the cards in the worn equipment add (also counted below).
+	Cards             Bonus         `json:"-"`
 	WeaponType, Range int           // equipped weapon class and attack reach in cells
 	Bonus             [NumStats]int // job level stat bonuses
 	MaxHP, MaxSP      int
@@ -502,6 +524,17 @@ func (c *CharData) Derive() Derived {
 		}
 	}
 	d.WeaponType, d.Range = weapon, reach
+	// Cards in the worn equipment (their stats are already in s).
+	d.Cards = c.cardBonus()
+	d.MaxHP = (d.MaxHP + d.Cards.MaxHP) * (100 + d.Cards.MaxHPRate) / 100
+	d.MaxSP = (d.MaxSP + d.Cards.MaxSP) * (100 + d.Cards.MaxSPRate) / 100
+	d.Atk += d.Cards.Atk
+	d.Def += d.Cards.Def
+	d.Mdef += d.Cards.Mdef
+	d.Hit += d.Cards.Hit
+	d.Flee += d.Cards.Flee
+	d.Flee2 += d.Cards.Flee2
+	d.Crit += d.Cards.Crit
 	if weapon == WeaponBow {
 		// Bows draw on DEX the way melee weapons draw on STR (pre-renewal),
 		// and the arrows' ATK and critical bonus add to the bow's.
@@ -551,9 +584,21 @@ func (c *CharData) UseArrow() (left int, err error) {
 	return it.Amount - 1, nil
 }
 
-// attackElement is the element of the character's weapon attacks: a bow's
-// arrows give theirs; everything else is neutral for now.
+// attackElement is the element of the character's weapon attacks: a forged
+// weapon's element, else the weapon's own (Fire Brand...), else for a bow its
+// arrows'; neutral otherwise.
 func (c *CharData) attackElement() int {
+	for _, it := range c.Inventory {
+		if it.Equip&SlotHandR == 0 {
+			continue
+		}
+		if it.Element != ElemNeutral {
+			return it.Element
+		}
+		if e := Items[it.ItemID].Element; e != ElemNeutral && Items[it.ItemID].Type == TypeWeapon {
+			return e
+		}
+	}
 	if c.NeedsArrows() {
 		if _, def, ok := c.Arrow(); ok {
 			return def.Element

@@ -1,14 +1,19 @@
 :root {
+  /* The 2004 client's interface: white windows with light blue title bars,
+     black 12px text, blue-grey frames and blue highlights. */
   --bg: #0e0d12;
-  --panel: rgba(28, 24, 20, 0.92);
-  --window: #1c1814;
-  --border: #8a6d3b;
-  --text: #f3ead8;
-  --muted: #b9ab90;
-  --accent: #d9a441;
-  --accent-text: #24180a;
-  --error: #ff8a7a;
-  color-scheme: dark;
+  --panel: #ffffff;
+  --window: #ffffff;
+  --border: #8d9ab3;
+  --line: #ccd2de; /* separators inside windows */
+  --well: #eceef3; /* sunken boxes: slots, gauges, lists */
+  --text: #000000;
+  --muted: #5d6679;
+  --accent: #2e56a8; /* RO's blue: titles, highlights, selection */
+  --accent-text: #ffffff;
+  --error: #c0281e;
+  --title: #17305e; /* text on the light blue title bar */
+  color-scheme: light;
 }
 
 * {
@@ -21,7 +26,8 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* The client's small, plain UI font. */
+  font: 12px/1.4 Tahoma, "Gulim", Verdana, Arial, sans-serif;
   overflow: hidden;
 }
 
@@ -39,7 +45,8 @@ body {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: radial-gradient(ellipse at center, rgba(70, 50, 25, 0.55), rgba(10, 8, 6, 0.92));
+  /* A sky-blue backdrop in the client's tones. */
+  background: radial-gradient(ellipse at 50% 30%, #dfe9f8, #9db4d8 55%, #4f6a97);
 }
 
 .overlay[hidden] {
@@ -80,7 +87,7 @@ input {
   padding: 9px 10px;
   border: 1px solid #5b4a30;
   border-radius: 6px;
-  background: #15120e;
+  background: var(--well);
   color: var(--text);
   font: inherit;
 }
@@ -103,9 +110,9 @@ details summary {
   align-items: center;
   gap: 6px 14px;
   padding: 8px 10px;
-  border: 1px solid rgba(138, 109, 59, 0.35);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--well);
   font-size: 13px;
 }
 
@@ -247,7 +254,7 @@ button:disabled {
 
 .menu button:hover,
 .menu button:focus-visible {
-  background: rgba(217, 164, 65, 0.18);
+  background: rgba(46, 86, 168, 0.18);
   color: var(--accent);
   outline: none;
 }
@@ -297,18 +304,18 @@ button:disabled {
 }
 
 .chat-line.error {
-  color: var(--error);
+  color: #ff7a6e; /* brighter than --error: it sits on the dark chat log */
 }
 
+/* The chat input is the client's light grey bar under the log. */
 .chat-form input {
   width: 100%;
-  padding: 5px 8px;
+  padding: 3px 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  background: #f1f2f5;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
 }
 
 .chat-form input:not(:focus) {
@@ -388,7 +395,7 @@ button:disabled {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--well);
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -611,7 +618,7 @@ button.small {
   height: 244px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--well);
   image-rendering: pixelated;
 }
 
@@ -649,7 +656,7 @@ button.small {
   padding: 2px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--well);
   line-height: 0;
 }
 
@@ -715,7 +722,7 @@ button.small {
   padding: 0 2px;
   border-radius: 3px;
   background: rgba(0, 0, 0, 0.75);
-  color: var(--text);
+  color: #fff;
   font-size: 10px;
   line-height: 1.3;
 }
@@ -740,8 +747,8 @@ button.small {
   position: relative;
   height: 16px;
   border-radius: 4px;
-  background: #15120e;
-  border: 1px solid #3a2f20;
+  background: var(--well);
+  border: 1px solid var(--line);
   overflow: hidden;
 }
 
@@ -774,7 +781,7 @@ button.small {
 
 .menu hr {
   border: 0;
-  border-top: 1px solid #4a3c27;
+  border-top: 1px solid var(--line);
   margin: 4px 2px;
 }
 
@@ -812,7 +819,7 @@ button.small {
   align-items: center;
   justify-content: space-between;
   padding: 6px 6px 6px 12px;
-  border-bottom: 1px solid #4a3c27;
+  border-bottom: 1px solid var(--line);
   cursor: move;
   user-select: none;
 }
@@ -836,7 +843,7 @@ button.small {
 
 .game-window-close:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(46, 86, 168, 0.12);
 }
 
 .game-window-body {
@@ -853,7 +860,7 @@ button.small {
   justify-content: space-between;
   gap: 12px;
   padding-top: 8px;
-  border-top: 1px solid #4a3c27;
+  border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -901,13 +908,13 @@ button:disabled.small-button {
   flex: 1;
   padding: 5px;
   background: transparent;
-  border: 1px solid #4a3c27;
+  border: 1px solid var(--line);
   color: var(--muted);
   font-weight: 600;
 }
 
 .tabs button[aria-selected="true"] {
-  background: rgba(217, 164, 65, 0.18);
+  background: rgba(46, 86, 168, 0.18);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -926,9 +933,9 @@ button:disabled.small-button {
   padding: 0;
   display: grid;
   place-items: center;
-  border: 1px solid #4a3c27;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #15120e;
+  background: var(--well);
   cursor: default;
 }
 
@@ -965,7 +972,7 @@ button.item-cell:focus-visible {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: rgba(15, 12, 9, 0.96);
+  background: var(--panel);
   color: var(--text);
   font-size: 12px;
   white-space: pre-line;
@@ -993,9 +1000,9 @@ button.item-cell:focus-visible {
   width: 75px;
   height: 100px;
   object-fit: contain;
-  border: 1px solid #4a3c27;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #15120e;
+  background: var(--well);
   image-rendering: pixelated;
 }
 
@@ -1038,7 +1045,7 @@ button.item-cell:focus-visible {
   justify-content: center;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid rgba(138, 109, 59, 0.35);
+  border-top: 1px solid var(--line);
 }
 
 .equip-name {
@@ -1057,9 +1064,9 @@ button.item-cell:focus-visible {
 .equip-preview canvas {
   width: 120px;
   height: 230px;
-  border: 1px solid #4a3c27;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: radial-gradient(ellipse at 50% 80%, #3a2e1f, #15120e);
+  background: radial-gradient(ellipse at 50% 80%, #ffffff, var(--well));
   image-rendering: pixelated;
 }
 
@@ -1083,7 +1090,7 @@ button.item-cell:focus-visible {
   column-gap: 18px;
   row-gap: 3px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #4a3c27;
+  border-bottom: 1px solid var(--line);
 }
 
 .status-grid {
@@ -1177,7 +1184,7 @@ button.item-cell:focus-visible {
   column-gap: 8px;
   align-items: center;
   padding: 4px;
-  border: 1px solid #3a2f20;
+  border: 1px solid var(--line);
   border-radius: 6px;
 }
 
@@ -1227,7 +1234,7 @@ button.item-cell:focus-visible {
   display: grid;
   gap: 3px;
   padding-top: 8px;
-  border-top: 1px solid #4a3c27;
+  border-top: 1px solid var(--line);
 }
 
 .shop-actions {
@@ -1539,8 +1546,8 @@ button.item-cell:focus-visible {
   width: 20px;
   height: 20px;
   padding: 0;
-  border: 1px solid #4a3c27;
-  background: #15120e;
+  border: 1px solid var(--line);
+  background: var(--well);
   color: var(--text);
   font-size: 13px;
   line-height: 1;
@@ -1598,7 +1605,7 @@ button.item-cell:focus-visible {
   align-items: center;
   gap: 10px;
   padding: 4px;
-  border: 1px solid #3a2f20;
+  border: 1px solid var(--line);
   border-radius: 6px;
 }
 
@@ -1630,9 +1637,9 @@ button.item-cell:focus-visible {
   width: 48px;
   height: 48px;
   image-rendering: pixelated;
-  border: 1px solid #4a3c27;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #15120e;
+  background: var(--well);
 }
 
 /* --- Hotkey bar ---------------------------------------------------------------- */
@@ -1669,7 +1676,7 @@ button.item-cell:focus-visible {
 
 .hotbar-slot.drop {
   border-color: var(--accent);
-  background: rgba(217, 164, 65, 0.2);
+  background: rgba(46, 86, 168, 0.2);
 }
 
 .hotbar-key {
@@ -1771,7 +1778,7 @@ button.item-cell:focus-visible {
 .update-box {
   width: min(380px, 100%);
   padding: 22px 24px;
-  border: 1px solid var(--border, rgba(217, 164, 65, 0.4));
+  border: 1px solid var(--border, rgba(46, 86, 168, 0.4));
   border-radius: 10px;
   background: var(--panel);
   color: var(--text);
@@ -1794,7 +1801,7 @@ button.item-cell:focus-visible {
   width: 28px;
   height: 28px;
   margin: 0 auto;
-  border: 3px solid rgba(217, 164, 65, 0.25);
+  border: 3px solid rgba(46, 86, 168, 0.25);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: update-spin 0.9s linear infinite;
@@ -1825,4 +1832,401 @@ button.item-cell:focus-visible {
   .update-spinner {
     animation-duration: 3s;
   }
+}
+
+/* ===========================================================================
+   The 2004 client's skin: windows, buttons and text boxes drawn with its own
+   interface bitmaps (ui/skin.ts sets --ro-* once they load; until then, and
+   if they're missing, the plain colours above stand in).
+   =========================================================================== */
+
+/* Windows: white body, thin blue-grey frame, square-ish corners. */
+.game-window,
+.panel,
+.update-box {
+  border: 1px solid var(--border);
+  border-radius: 3px 3px 2px 2px;
+  background: var(--window);
+  box-shadow: 1px 2px 6px rgba(20, 30, 60, 0.35);
+}
+
+/* Title bar: the 17px light blue bar (titlebar_left/mid/right.bmp). */
+.game-window-bar {
+  height: 17px;
+  padding: 0 3px 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(#e9f0fb, #b8cbea);
+}
+
+.ro-skin .game-window-bar {
+  background:
+    var(--ro-title-left) left top / auto 17px no-repeat,
+    var(--ro-title-right) right top / auto 17px no-repeat,
+    var(--ro-title-mid) left top / auto 17px repeat-x;
+}
+
+.game-window-bar h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--title);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Close: the round blue button (sys_close_off/on.bmp). */
+.game-window-close {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border-radius: 50%;
+  background: #5b7cc4;
+  color: #fff;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.ro-skin .game-window-close {
+  width: 11px;
+  height: 11px;
+  font-size: 0; /* the bitmap has the cross */
+  background: var(--ro-close) center / 11px 11px no-repeat;
+}
+
+.ro-skin .game-window-close:hover,
+.ro-skin .game-window-close:focus-visible {
+  background: var(--ro-close-on) center / 11px 11px no-repeat;
+}
+
+.game-window-body {
+  padding: 8px 10px 10px;
+  gap: 8px;
+}
+
+/* Footers sit on the window's striped bottom bar (btnbar_*.bmp). */
+.window-footer {
+  margin: 4px -10px -10px;
+  padding: 3px 10px;
+  min-height: 21px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  background: #f4f5f8;
+  color: var(--muted);
+}
+
+.ro-skin .window-footer {
+  background:
+    var(--ro-bar-left) left top / auto 21px no-repeat,
+    var(--ro-bar-right) right top / auto 21px no-repeat,
+    var(--ro-bar-mid) left top / auto 21px repeat-x;
+}
+
+/* Buttons: the rounded white pill (mesbtn_left/mid/right.bmp), black text. */
+button {
+  min-height: 20px;
+  padding: 2px 12px;
+  border: 1px solid #a7b1c4;
+  border-radius: 10px;
+  background: linear-gradient(#ffffff, #e6e9f0);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+/* Every text button wears the pill; icon-like ones (slots, close, menu
+   entries, minimap, sit, hair swatches, stat "+", tabs) keep their own look. */
+.ro-skin button:not(.item-cell, .game-window-close, .hud-mini, .vend-sign, .room-sign, .menu button, .menu-button, .minimap-button, .hotbar-sit, .hair-choice, .stat-plus, .tabs button) {
+  border: 0;
+  border-radius: 0;
+  background:
+    var(--ro-btn-left) left center / auto 20px no-repeat,
+    var(--ro-btn-right) right center / auto 20px no-repeat,
+    var(--ro-btn-mid) left center / auto 20px repeat-x;
+  background-clip: padding-box;
+  background-origin: border-box;
+  padding: 0 12px;
+  height: 20px;
+  line-height: 20px;
+}
+
+button:hover:not(:disabled),
+button:focus-visible {
+  color: var(--accent);
+}
+
+button:focus-visible {
+  outline: 1px dotted var(--accent);
+  outline-offset: 1px;
+}
+
+/* The login form's main button stands out a little, as RO's OK does. */
+#login-button {
+  font-weight: 700;
+}
+
+/* Text boxes: white with a sunken blue-grey frame (txtbox_*.bmp). */
+input,
+select,
+textarea {
+  border: 1px solid #9aa5bb;
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  box-shadow: inset 1px 1px 0 #d4d9e3;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Login box: a window with the client's title bar look. */
+.panel {
+  padding: 0 16px 16px;
+  gap: 10px;
+}
+
+.panel h1 {
+  margin: 0 -16px 4px;
+  padding: 0 10px;
+  height: 22px;
+  line-height: 22px;
+  font-size: 13px;
+  color: var(--title);
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(#e9f0fb, #b8cbea);
+}
+
+.ro-skin .panel h1 {
+  background:
+    var(--ro-title-left) left top / auto 22px no-repeat,
+    var(--ro-title-right) right top / auto 22px no-repeat,
+    var(--ro-title-mid) left top / auto 22px repeat-x;
+}
+
+/* HUD cards, menus, tooltips, toasts: small white boxes. */
+.hud-card,
+.menu,
+#tooltip,
+.toast {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  box-shadow: 1px 2px 5px rgba(20, 30, 60, 0.3);
+}
+
+.menu-button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.menu button {
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  text-align: left;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: #dfe7f6;
+  color: var(--accent);
+}
+
+/* Section headings and highlights in the client's blue. */
+h3,
+.window-hint {
+  color: var(--muted);
+}
+
+/* Tabs: flat grey tabs, the open one white and joined to the window. */
+.tabs button {
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px 3px 0 0;
+  background: var(--well);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.tabs button[aria-selected="true"] {
+  background: #ffffff;
+  border-bottom-color: #ffffff;
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* Stat "+" buttons: small square keys. */
+.stat-plus {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #9aa5bb;
+  border-radius: 2px;
+  background: linear-gradient(#ffffff, #e2e6ee);
+  font-size: 12px;
+}
+
+/* Status box minimize/restore (the client's Basic Info window, Alt+V). The
+   HUD card ignores clicks except on its own buttons. */
+.hud-card {
+  pointer-events: none;
+}
+
+.hud-mini {
+  pointer-events: auto;
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid #7f93c0;
+  border-radius: 50%;
+  background: linear-gradient(#ffffff, #c9d6ef);
+}
+
+.ro-skin .hud-mini {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  background: var(--ro-mini) center / 11px 11px no-repeat;
+}
+
+.ro-skin .hud-mini:hover,
+.ro-skin .hud-mini:focus-visible {
+  background-image: var(--ro-mini-on);
+}
+
+.ro-skin .hud-card.mini .hud-mini {
+  background-image: var(--ro-base);
+}
+
+.ro-skin .hud-card.mini .hud-mini:hover,
+.ro-skin .hud-card.mini .hud-mini:focus-visible {
+  background-image: var(--ro-base-on);
+}
+
+/* Minimized: just the name and HP/SP, narrower. */
+.hud-card.mini {
+  min-width: 160px;
+}
+
+.hud-card.mini #hud-level,
+.hud-card.mini .bar.exp,
+.hud-card.mini #hud-pos,
+.hud-card.mini .hud-zeny {
+  display: none;
+}
+
+/* The in-game copy, under the minimap: same width, one compact line. */
+.server-stats.in-game {
+  width: 162px;
+  padding: 3px 6px;
+  gap: 2px 8px;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 1px 2px 5px rgba(20, 30, 60, 0.3);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.server-stats.in-game .stat-status {
+  flex-basis: 100%;
+}
+
+/* EXP as percentages, only in the minimized status box (which hides the bars). */
+.hud-exp-mini {
+  display: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-card.mini .hud-exp-mini {
+  display: block;
+}
+
+/* Card slots in the item info window: one line per slot. */
+.item-info-cards {
+  margin: 0;
+  padding: 6px 0 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid var(--line);
+}
+
+.item-info-cards li::before {
+  content: "◆ ";
+  color: var(--accent);
+}
+
+.item-info-cards li.empty {
+  color: var(--muted);
+}
+
+.item-info-cards li.empty::before {
+  content: "◇ ";
+}
+
+/* Insert Card: the equipment a card fits, each with a pick button. */
+.compound-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.compound-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compound-pick {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A vending stall's sign over the vendor: a small white board with the
+   client's shop icon, like players' vending signs in RO. */
+.vend-sign {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 180px;
+  min-height: 0;
+  height: auto;
+  padding: 3px 8px 3px 30px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fffef4 no-repeat 4px center / 20px 20px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 1px 2px 4px rgba(20, 30, 60, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.ro-skin .vend-sign {
+  background-image: var(--ro-shop);
+}
+
+.vend-sign:hover,
+.vend-sign:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }

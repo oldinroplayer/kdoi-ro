@@ -49,6 +49,7 @@ const (
 	OpPartyChat     uint16 = 0x0022
 	OpPartyEXP      uint16 = 0x0023
 	OpResume        uint16 = 0x0024
+	OpCompound      uint16 = 0x0025
 )
 
 // Server -> client opcodes.
@@ -100,6 +101,7 @@ const (
 	OpPlayerSpeed     uint16 = 0x802D
 	OpServerUpdating  uint16 = 0x802E
 	OpEffect          uint16 = 0x802F
+	OpVendorAppear    uint16 = 0x8030
 )
 
 // Effect kinds for OpEffect.
@@ -333,6 +335,9 @@ type (
 // Emote shows an emoticon over the player's head (0..Emotions-1).
 type Emote struct{ Type uint8 }
 
+// Compound puts the card at inventory index Card into the equipment at Equip.
+type Compound struct{ Card, Equip uint16 }
+
 // SetAppearance changes the player's hairstyle, hair colour and gender.
 type SetAppearance struct {
 	Style, Color uint8
@@ -425,6 +430,8 @@ func Decode(b []byte) (any, error) {
 		pkt = &PartyEXP{Even: r.U8() != 0}
 	case OpEmote:
 		pkt = &Emote{Type: r.U8()}
+	case OpCompound:
+		pkt = &Compound{Card: r.U16(), Equip: r.U16()}
 	case OpSetAppearance:
 		pkt = &SetAppearance{Style: r.U8(), Color: r.U8(), Female: r.U8() != 0}
 	case OpDropItem:
@@ -564,18 +571,28 @@ func NpcAppear(id uint32, name, sprite string, x, y int, dir uint8) []byte {
 
 // ShopItem is one entry of a shop's catalogue.
 type ShopItem struct {
-	ItemID int
-	Price  int
+	ItemID  int
+	Price   int
+	Element int // a forged weapon's element (vendors), 0 otherwise
 }
 
 // ShopOpen lists what an NPC sells (prices after Discount). sellRate is the
-// percentage of half price the shop pays when buying (100, or more with Overcharge).
-func ShopOpen(npcID uint32, npcName string, items []ShopItem, sellRate int) []byte {
+// percentage of half price the shop pays when buying (100, or more with
+// Overcharge); buyOnly marks a vendor stall, which doesn't buy.
+func ShopOpen(npcID uint32, npcName string, items []ShopItem, sellRate int, buyOnly bool) []byte {
 	w := NewPacket(OpShopOpen).U32(npcID).String(npcName).U16(uint16(len(items)))
 	for _, it := range items {
-		w.U16(uint16(it.ItemID)).U32(uint32(it.Price))
+		w.U16(uint16(it.ItemID)).U32(uint32(it.Price)).U8(uint8(it.Element))
 	}
-	return w.U16(uint16(sellRate)).Bytes()
+	return w.U16(uint16(sellRate)).U8(boolU8(buyOnly)).Bytes()
+}
+
+// VendorAppear shows a vending stall: the vendor (an NPC drawn as a sitting
+// character of a job, with a look) and the shop sign over their head.
+func VendorAppear(id uint32, name, title string, job uint16, x, y int, dir uint8, look Look) []byte {
+	w := NewPacket(OpVendorAppear).U32(id).String(name).String(title).U16(job).
+		U16(uint16(x)).U16(uint16(y)).U8(dir)
+	return look.write(w).Bytes()
 }
 
 func ShopResult(code uint8) []byte {
@@ -586,13 +603,19 @@ func ShopResult(code uint8) []byte {
 type InvEntry struct {
 	Index, ItemID, Amount int
 	Equip                 uint16
+	Cards                 []int // compounded cards' item IDs
+	Element               int   // a forged weapon's element (0 = none)
 }
 
 // Inventory replaces the client's whole inventory.
 func Inventory(items []InvEntry) []byte {
 	w := NewPacket(OpInventory).U16(uint16(len(items)))
 	for _, it := range items {
-		w.U16(uint16(it.Index)).U16(uint16(it.ItemID)).U16(uint16(it.Amount)).U16(it.Equip)
+		w.U16(uint16(it.Index)).U16(uint16(it.ItemID)).U16(uint16(it.Amount)).U16(it.Equip).U8(uint8(len(it.Cards)))
+		for _, card := range it.Cards {
+			w.U16(uint16(card))
+		}
+		w.U8(uint8(it.Element))
 	}
 	return w.Bytes()
 }

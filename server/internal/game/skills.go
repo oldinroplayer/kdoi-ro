@@ -80,8 +80,15 @@ func init() {
 		}
 	}
 	for _, it := range generatedItems {
-		if _, ok := Items[it.ID]; !ok {
+		own, ok := Items[it.ID]
+		if !ok {
 			Items[it.ID] = it
+			continue
+		}
+		// Hand-written equipment still gets its card slots from item_db.
+		if own.Slots == 0 && it.Slots > 0 {
+			own.Slots = it.Slots
+			Items[it.ID] = own
 		}
 	}
 	for id, m := range Mobs {

@@ -202,6 +202,7 @@ func TestDiscountLowersShopPrices(t *testing.T) {
 	for range int(r.U16()) {
 		id := int(r.U16())
 		prices[id] = int(r.U32())
+		r.U8() // forged element (vendors)
 	}
 	if prices[1201] != 46 { // Knife: 50 less 7%
 		t.Fatalf("Knife price with Discount 1 = %d", prices[1201])

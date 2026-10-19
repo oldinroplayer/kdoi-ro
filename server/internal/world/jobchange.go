@@ -58,6 +58,8 @@ func (w *World) NpcReply(id, npcID uint32, choice uint8) error {
 			w.warperReply(p, n, int(choice))
 		case n.Kind == KindReset:
 			w.resetReply(p, n, int(choice))
+		case n.Kind == KindTraining:
+			w.trainingReply(p, n, int(choice))
 		case n.Kind == KindJobChange && int(choice) < len(game.FirstJobs):
 			w.changeJob(p, n, game.FirstJobs[choice])
 		}

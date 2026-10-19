@@ -48,6 +48,17 @@ func TestCityContentOnWalkableCells(t *testing.T) {
 		if !near(n.Map, n.X, n.Y) {
 			t.Errorf("NPC %d %s at %s (%d,%d) isn't near a walkable cell", n.ID, n.Name, n.Map, n.X, n.Y)
 		}
+		// Every Training Guide spot is on a loaded map and lands on a walkable cell.
+		for _, r := range n.Training {
+			for _, tp := range r.Spots {
+				switch m := maps[tp.Map]; {
+				case m == nil:
+					t.Errorf("%s spot %q: map %s isn't loaded", r.Name, tp.Name, tp.Map)
+				case !m.Walkable(tp.X, tp.Y):
+					t.Errorf("%s spot %q lands on %s (%d,%d), not walkable", r.Name, tp.Name, tp.Map, tp.X, tp.Y)
+				}
+			}
+		}
 		if n.Kafra == nil {
 			continue
 		}
