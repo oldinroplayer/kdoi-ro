@@ -75,7 +75,15 @@ type Player struct {
 	out  Outbox
 
 	dead        bool
-	target      uint32 // monster being attacked
+	sitting     bool      // can't walk or attack; regenerates twice as fast
+	casting     *cast     // skill being cast, if any
+	pending     *cast     // skill waiting for the player to walk into range
+	room        *chatRoom // chat room the player is in (can't walk or fight)
+	pickup      uint32    // floor item the player is walking over to pick up
+	buffEnds    map[int]time.Time
+	dialog      uint32    // NPC whose question the player is answering
+	nextSkill   time.Time // after-cast delay: no skills before this
+	target      uint32    // monster being attacked
 	chaseTarget path.Point
 	nextAttack  time.Time
 	nextRepath  time.Time
@@ -88,6 +96,7 @@ type mapInstance struct {
 	grid     *gat.Map
 	players  map[uint32]*Player
 	monsters map[uint32]*Monster
+	items    map[uint32]*floorItem
 	warps    []Warp
 	npcs     []*NPC
 }
@@ -114,7 +123,8 @@ type NPC struct {
 	Map    string
 	X, Y   int
 	Dir    uint8
-	Shop   []int // item IDs, sold at their database price
+	Shop   []int  // item IDs, sold at their database price
+	Kind   string // KindShop (default) or KindJobChange
 }
 
 type World struct {
@@ -123,10 +133,13 @@ type World struct {
 	players   map[uint32]*Player
 	monsters  map[uint32]*Monster
 	online    map[string]uint32 // lowercase name -> id
+	rooms     map[uint32]*chatRoom
 	nextID    uint32
 	savePoint Location
 	rng       *rand.Rand
 	respawns  []respawn
+	// nextFloorSweep is when expired floor items are next cleared.
+	nextFloorSweep time.Time
 
 	cmds    chan func()
 	stopped chan struct{}
@@ -144,6 +157,7 @@ func New(cfg Config) (*World, error) {
 		players:   map[uint32]*Player{},
 		monsters:  map[uint32]*Monster{},
 		online:    map[string]uint32{},
+		rooms:     map[uint32]*chatRoom{},
 		nextID:    100000, // keep unit IDs clear of NPC IDs and small reserved values
 		savePoint: cfg.SavePoint,
 		rng:       rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)),
@@ -154,6 +168,7 @@ func New(cfg Config) (*World, error) {
 		w.maps[name] = &mapInstance{
 			name: name, grid: grid,
 			players: map[uint32]*Player{}, monsters: map[uint32]*Monster{},
+			items: map[uint32]*floorItem{},
 		}
 	}
 	if _, ok := w.maps[cfg.SavePoint.Map]; !ok {
@@ -249,6 +264,7 @@ func (w *World) tick(now time.Time) {
 		w.tickMonster(mob, now)
 	}
 	w.tickRespawns(now)
+	w.tickFloorItems(now)
 }
 
 // Join places a character on its saved map (snapping to the nearest walkable
@@ -286,6 +302,7 @@ func (w *World) Join(name string, data game.CharData, out Outbox) (uint32, error
 		w.place(p, m, data.X, data.Y)
 		w.sendInventory(p)
 		w.sendStatus(p)
+		w.sendSkills(p)
 	})
 	if err != nil {
 		return 0, err
@@ -300,8 +317,10 @@ func (w *World) place(p *Player, m *mapInstance, x, y int) {
 		x, y = wx, wy
 	}
 	p.m, p.x, p.y, p.path = m, x, y, nil
+	p.pending, p.pickup = nil, 0
 
 	p.out.Send(proto.EnterMap(p.id, m.name, p.x, p.y, p.dir, p.data.Job, WalkSpeed, p.look()))
+	w.sendBuffs(p, time.Now())
 	for _, wp := range m.warps {
 		p.out.Send(proto.WarpPortal(wp.X, wp.Y))
 	}
@@ -323,10 +342,12 @@ func (w *World) place(p *Player, m *mapInstance, x, y int) {
 		other.out.Send(appear)
 	}
 	m.players[p.id] = p
+	w.sendRoomSigns(p)
+	w.sendFloorItems(p)
 }
 
 func (p *Player) appearPacket() []byte {
-	return proto.PlayerAppear(p.id, p.Name, p.data.Job, p.x, p.y, p.dir, uint16(p.speed), p.dead, p.look())
+	return proto.PlayerAppear(p.id, p.Name, p.data.Job, p.x, p.y, p.dir, uint16(p.speed), p.dead, p.look(), p.sitting)
 }
 
 func (p *Player) look() proto.Look {
@@ -367,10 +388,12 @@ func (w *World) warp(p *Player, wp Warp) {
 func (w *World) Move(id uint32, x, y int) error {
 	return w.do(func() {
 		p, ok := w.players[id]
-		if !ok || p.dead {
-			return
+		if !ok || p.dead || p.sitting || p.room != nil {
+			return // sitting players stand up first and chatters leave their room, as in RO
 		}
 		p.target = 0
+		p.pending, p.pickup = nil, 0
+		w.cancelCast(p) // walking away interrupts casting, as in RO
 		if route := p.routeTo(path.Point{X: x, Y: y}, 0, MaxWalkSteps, time.Now()); route != nil {
 			w.broadcast(p.m, proto.PlayerMove(p.id, p.x, p.y, cells(route)))
 		}
@@ -385,16 +408,16 @@ func (w *World) Leave(id uint32) (data game.CharData, ok bool) {
 		if !found {
 			return
 		}
+		w.leaveRoom(p, proto.LeftByChoice)
 		w.removeFromMap(p)
 		delete(w.players, id)
 		delete(w.online, strings.ToLower(p.Name))
-		data = p.data
+		data = p.data.Clone()
 		data.Map, data.X, data.Y = p.m.name, p.x, p.y
 		if p.dead {
 			data.Map, data.X, data.Y = w.savePoint.Map, w.savePoint.X, w.savePoint.Y
 			reviveVitals(&data)
 		}
-		data.Inventory = append([]game.InvItem(nil), p.data.Inventory...)
 		ok = true
 	})
 	return data, ok && err == nil

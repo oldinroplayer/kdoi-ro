@@ -1,7 +1,7 @@
 // Equipment window (Alt+Q): worn items around a preview of the character.
 import { audio } from "../audio";
 import type { Connection } from "../net";
-import { CharacterSprite, loadEquipLayers, loadNoviceAssets, PlayerAction } from "../render/character";
+import { CharacterSprite, loadEquipLayers, loadPlayerAssets, PlayerAction } from "../render/character";
 import type { PlayerState } from "../state";
 import { itemCell } from "./common";
 import { GameWindow } from "./window";
@@ -117,9 +117,15 @@ export class EquipmentWindow {
   }
 
   private sprite: CharacterSprite | null = null;
+  private spriteJob = 0;
 
   private async drawPreview(): Promise<void> {
-    this.sprite ??= new CharacterSprite(await loadNoviceAssets());
+    const job = this.state.status?.job ?? 0;
+    if (!this.sprite || this.spriteJob !== job) {
+      this.sprite?.dispose();
+      this.sprite = new CharacterSprite(await loadPlayerAssets(job));
+      this.spriteJob = job;
+    }
     // Show the battle stance so the weapon and shield are visible, like RO's own preview.
     const worn = (slot: number) => this.state.equippedIn(slot)?.itemId ?? 0;
     const look = {
@@ -129,7 +135,7 @@ export class EquipmentWindow {
       headMid: worn(slots.headMid),
       headLow: worn(slots.headLow),
     };
-    this.sprite.setEquipment(await loadEquipLayers(look, (id) => this.state.items?.get(id)?.sprite || undefined));
+    this.sprite.setEquipment(await loadEquipLayers(look, (id) => this.state.items?.get(id)?.sprite || undefined, job));
     this.sprite.draw(PlayerAction.Ready, this.dir, 0);
     const ctx = this.preview.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;

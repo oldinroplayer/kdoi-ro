@@ -42,7 +42,7 @@ export function hideTooltip(): void {
 export function itemCell(
   item: ItemInfo,
   amount: number,
-  opts: { onActivate?: () => void; label?: string; action?: string } = {},
+  opts: { onActivate?: () => void; label?: string; action?: string; dragData?: string } = {},
 ): HTMLElement {
   const cell = document.createElement("button");
   cell.type = "button";
@@ -75,6 +75,7 @@ export function itemCell(
     hideTooltip();
     showItemInfo(item);
   });
+  if (opts.dragData) makeDraggable(cell, opts.dragData);
   if (opts.onActivate) {
     const activate = opts.onActivate;
     cell.addEventListener("dblclick", () => {
@@ -92,30 +93,48 @@ export function itemCell(
   return cell;
 }
 
+/** MIME type for things dragged onto the hotkey bar. */
+export const DRAG_TYPE = "application/x-kdoiro-hotkey";
+
+/** Lets an element be dragged onto the hotkey bar carrying `data`. */
+export function makeDraggable(el: HTMLElement, data: string): void {
+  el.draggable = true;
+  el.addEventListener("dragstart", (ev) => {
+    hideTooltip();
+    ev.dataTransfer?.setData(DRAG_TYPE, data);
+    if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "copyMove";
+  });
+}
+
 let infoWindow: GameWindow | null = null;
 
-export function showItemInfo(item: ItemInfo): void {
-  infoWindow ??= new GameWindow("item-info", "Item", { x: 420, y: 120, width: 300 });
+/** The info window: a picture, a title and an RO-formatted description. */
+export function showInfo(title: string, art: Promise<string>, description: string, artClass = "item-info-art"): void {
+  infoWindow ??= new GameWindow("item-info", "Info", { x: 420, y: 120, width: 300 });
   const body = infoWindow.body;
   body.replaceChildren();
   body.classList.add("item-info");
 
   const head = document.createElement("div");
   head.className = "item-info-head";
-  const art = document.createElement("img");
-  art.alt = "";
-  art.className = "item-info-art";
-  void itemIllustration(item).then((src) => {
-    if (src) art.src = src;
-    else art.remove();
+  const img = document.createElement("img");
+  img.alt = "";
+  img.className = artClass;
+  void art.then((src) => {
+    if (src) img.src = src;
+    else img.remove();
   });
-  const title = document.createElement("h3");
-  title.textContent = item.name;
-  head.append(art, title);
+  const h = document.createElement("h3");
+  h.textContent = title;
+  head.append(img, h);
 
   const desc = document.createElement("div");
   desc.className = "item-info-desc";
-  renderDescription(item.description || "No description.", desc);
+  renderDescription(description || "No description.", desc);
   body.append(head, desc);
   infoWindow.open();
+}
+
+export function showItemInfo(item: ItemInfo): void {
+  showInfo(item.name, itemIllustration(item), item.description);
 }

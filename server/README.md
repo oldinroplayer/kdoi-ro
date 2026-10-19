@@ -13,14 +13,44 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
 - Inventory, equipment (RO's 10 equip slots) and stats: STR/AGI/VIT/INT/DEX/LUK
   start at 1 with 48 status points; derived stats use pre-renewal formulas.
   Rules live in `internal/game`; the item database is served at `/items.json`.
-- Monsters on moc_fild07 (rAthena's pre-renewal spawns and stats): they wander,
-  fight back when hit, drop loot straight into the killer's inventory, and respawn.
+- Monsters on moc_fild07 and moc_fild06 (2004 spawns and stats): they wander,
+  fight back when hit, drop loot on the ground around the corpse, and respawn.
+  Whoever dealt the most damage gets first pick for 3 s; items vanish after 60 s.
+  Players pick items up by clicking them (walking over first) and can drop
+  inventory items on the ground for anyone to take.
+  Monsters with the Assist flag (Andre, Deniro, Piere, PecoPeco, Condor) join in
+  when one of their kind within 10 cells is attacked.
 - Combat: click to auto-attack at your ASPD; hit/flee, crits, DEF and VIT
   reduce damage. HP/SP regenerate; Red Potions and herbs heal. At 0 HP you're
   knocked out and can return to the save point (Morroc) with half HP.
 - EXP is shared by damage dealt; level ups grant status points and refill HP/SP.
   Base level is capped at 30 for now (the EXP table stops there).
 - Shops buy anything you carry (except worn equipment) at half price.
+- Jobs: Novice plus the six 1st jobs (Swordman, Mage, Archer, Acolyte, Merchant,
+  Thief). The Job Guide in Morroc (146, 93) changes a Novice at Job Level 10
+  with every skill point spent (the 2004 job quests' rule). Each job has its own
+  HP/SP growth, weight limit, attack speed per weapon type, job level stat
+  bonuses and EXP table (base levels to 99, 1st-job levels to 50), generated
+  from the 2004 data by `tools/gen_jobs.py`. Equipment checks the 2004 item_db
+  job masks (e.g. Acolytes can't use daggers).
+- Skills: 1 skill point per job level; the skill database is served at
+  `/skills.json`. Novices have Basic Skill (Lv 3 unlocks sitting, as in RO) and
+  First Aid (a granted quest skill: 3 SP heals 5 HP). Skills can have SP costs,
+  cast times (moving or being hit cancels the cast) and after-cast delays.
+  Each 1st job has its 2004 skills (numbers from `tools/gen_skills.py`): Bash,
+  Magnum Break (fire burst with knockback), Sword Mastery, HP Recovery; Fire,
+  Cold and Lightning Bolt, SP Recovery; Double Strafe, Owl's and Vulture's Eye;
+  Heal, Increase AGI, Blessing, Divine Protection; Mammonite (costs zeny),
+  Discount, Overcharge, Enlarge Weight Limit; Double Attack, Improve Dodge,
+  Envenom. Targeted skills walk into range first; buffs expire on a timer.
+- Chat: lines carry 14 cells (eAthena's AREA_SIZE); whispers reach anyone online
+  by name. Chat rooms: a titled sign over the owner's head (public or with a
+  password, 2–20 people); members chat privately, can't walk or fight, and the
+  owner can kick (kicked players can't rejoin), hand over or edit the room.
+  At most 5 chat lines per 3 seconds.
+- Sitting doubles HP/SP regeneration (every 3 s / 4 s instead of 6 s / 8 s);
+  sitting players can't walk, attack or use skills until they stand up, but can
+  turn to face where they click.
 - The last position (map and cell) is saved on logout.
 
 ## Run
@@ -37,7 +67,7 @@ Flags:
 |---|---|---|
 | `-addr` | `:7000` | listen address; WebSocket at `/ws`, health check at `/healthz` |
 | `-data` | `../ro-client/data` | directory with `<map>.gat` files |
-| `-maps` | `morocc,moc_fild07` | maps to load |
+| `-maps` | `morocc,moc_fild07,moc_fild06` | maps to load |
 | `-db` | `data/characters.json` | character file (created on first login) |
 | `-origins` | `localhost:*,127.0.0.1:*` | browser origins allowed to connect |
 
@@ -66,6 +96,21 @@ Coordinates are map cells, `y = 0` at the south edge.
 | `0x0009` | UseItem | `index u16` — drink/eat a healing item |
 | `0x000A` | Respawn | — return to the save point after being knocked out |
 | `0x000B` | ShopSell | `npcId u32`, `count u16`, then `count` × (`index u16`, `amount u16`) |
+| `0x000C` | Sit | `sit u8` — 1 sit down, 0 stand up |
+| `0x000E` | Learn | `skillId u16` — spend a skill point |
+| `0x0010` | NpcReply | `npcId u32`, `choice u8` — the option picked in an NpcDialog (255 = walked away) |
+| `0x0011` | Chat | `text str` — said out loud, or to your chat room if you're in one |
+| `0x0012` | Whisper | `to str`, `text str` |
+| `0x0013` | RoomCreate | `title str`, `limit u8` (2–20), `public u8`, `password str` (needed when not public) |
+| `0x0014` | RoomJoin | `roomId u32`, `password str` |
+| `0x0015` | RoomLeave | — |
+| `0x0016` | RoomKick | `name str` (owner only) |
+| `0x0017` | RoomUpdate | same fields as RoomCreate (owner only) |
+| `0x0018` | RoomOwner | `name str` — hand the room to another member (owner only) |
+| `0x0019` | PickUp | `floorItemId u32` — walk over and pick up an item on the ground |
+| `0x001A` | DropItem | `index u16`, `amount u16` — drop inventory items at your feet |
+| `0x000F` | UseSkill | `skillId u16`, `level u16` (0 = highest learned), `targetId u32` (ignored for self skills) |
+| `0x000D` | Turn | `dir u8` — face a direction without moving (0 N, 1 NW … 7 NE); ignored while walking |
 
 The first packet must be Login (within 30 s, at most 5 attempts). Move is
 ignored if sent less than 100 ms after the previous one, or if the cell is
@@ -77,23 +122,44 @@ unreachable within 32 steps.
 |---|---|---|
 | `0x8001` | LoginResult | `code u8` |
 | `0x8002` | EnterMap | `selfId u32`, `map str`, `x u16`, `y u16`, `dir u8`, `job u16`, `speed u16`, then the look (5 × `u16`, as in PlayerAppear) |
-| `0x8003` | PlayerAppear | `id u32`, `name str`, `job u16`, `x u16`, `y u16`, `dir u8`, `speed u16`, `dead u8`, then the look: item IDs (0 = none) of `weapon u16`, `shield u16`, `headTop u16`, `headMid u16`, `headLow u16` |
+| `0x8003` | PlayerAppear | `id u32`, `name str`, `job u16`, `x u16`, `y u16`, `dir u8`, `speed u16`, `dead u8`, then the look: item IDs (0 = none) of `weapon u16`, `shield u16`, `headTop u16`, `headMid u16`, `headLow u16`, then `sitting u8` |
 | `0x8004` | PlayerDisappear | `id u32`, `reason u8` (0 left, 1 died) — any unit, player or monster |
 | `0x8005` | PlayerMove | `id u32`, `fromX u16`, `fromY u16`, `count u16`, then `count` × (`x u16`, `y u16`) — any unit |
 | `0x8006` | PlayerStop | `id u32`, `x u16`, `y u16` — a unit stopped walking here (e.g. reached attack range) |
 | `0x8007` | WarpPortal | `x u16`, `y u16` — a warp on the current map |
 | `0x8008` | NpcAppear | `id u32`, `name str`, `sprite str` (under `data/sprite/npc/`), `x u16`, `y u16`, `dir u8` |
-| `0x8009` | ShopOpen | `npcId u32`, `npcName str`, `count u16`, then `count` × (`itemId u16`, `price u32`) |
+| `0x8009` | ShopOpen | `npcId u32`, `npcName str`, `count u16`, then `count` × (`itemId u16`, `price u32`, after Discount), then `sellRate u16` (percent of half price paid when selling; above 100 with Overcharge) |
 | `0x800A` | ShopResult | `code u8` — 0 ok, 1 not enough zeny, 2 overweight, 3 inventory full, 4 invalid / too far, 5 sold |
 | `0x800B` | Inventory | `count u16`, then `count` × (`index u16`, `itemId u16`, `amount u16`, `equip u16` slot mask, 0 = not worn) |
-| `0x800C` | Status | `baseLv u16`, `jobLv u16`, 6 × `stat u8`, 6 × `raiseCost u8`, `statusPoints u16`, `zeny u32`, then u16 each: `hp maxHp sp maxSp atk atk2 matkMin matkMax def def2 mdef mdef2 hit flee flee2 crit aspd`, then u32 each: `weight maxWeight baseExp baseNext jobExp jobNext` (next = 0 at the cap) |
+| `0x800C` | Status | `baseLv u16`, `jobLv u16`, 6 × `stat u8`, 6 × `raiseCost u8`, `statusPoints u16`, `zeny u32`, then u16 each: `hp maxHp sp maxSp atk atk2 matkMin matkMax def def2 mdef mdef2 hit flee flee2 crit aspd`, then u32 each: `weight maxWeight baseExp baseNext jobExp jobNext` (next = 0 at the cap), then `job u16` and 6 × `jobBonus u8` (STR..LUK) |
 | `0x800D` | Message | `text str` — a notice for the player (e.g. why an action failed, loot) |
 | `0x800E` | MonsterAppear | `id u32`, `mobId u16`, `name str`, `sprite str` (under `data/sprite/몬스터/`), `x u16`, `y u16`, `dir u8`, `speed u16` |
-| `0x800F` | Damage | `src u32`, `target u32`, `damage u32`, `flags u8` (1 miss, 2 crit), `motion u16` (attack anim ms), `hurt u16` (target flinch ms, 0 = none) |
+| `0x800F` | Damage | `src u32`, `target u32`, `damage u32`, `flags u8` (1 miss, 2 crit), `motion u16` (attack anim ms), `hurt u16` (target flinch ms, 0 = none), `skillId u16` (0 = normal attack), `hits u8` (blows the damage is split over: bolts, Double Strafe, Double Attack) |
 | `0x8010` | UnitDead | `id u32` — a player was knocked out (monsters use PlayerDisappear reason 1) |
-| `0x8011` | LevelUp | `id u32`, `kind u8` (0 base, 1 job) |
+| `0x8011` | LevelUp | `id u32`, `kind u8` (0 base level, 1 job level, 2 job change) |
 | `0x8012` | Heal | `id u32`, `amount u16` |
 | `0x8013` | PlayerLook | `id u32`, then the look (5 × `u16`) — visible equipment changed |
+| `0x8014` | PlayerSit | `id u32`, `sitting u8` |
+| `0x8015` | PlayerTurn | `id u32`, `dir u8` |
+| `0x8016` | SkillList | `skillPoints u16`, `count u16`, then `count` × (`skillId u16`, `level u8`) — your whole tree, 0 = not learned |
+| `0x8017` | SkillCast | `src u32`, `target u32`, `skillId u16`, `castMs u16` — casting started (`skillId` 0 = cancelled) |
+| `0x8019` | NpcDialog | `npcId u32`, `name str`, `text` (`u16` length + UTF-8, may contain newlines), `count u8`, then `count` × `option str` (0 options = just Close) |
+| `0x801A` | PlayerJob | `id u32`, `job u16` — a player changed job (new body sprite) |
+| `0x801B` | Buff | `id u32`, `skillId u16`, `level u8`, `ms u32` — a buff started (or ended, `ms` 0); sent only to the buffed player |
+| `0x801C` | ChatMessage | `id u32` (speaker), `kind u8` (0 out loud, 1 in a chat room), `name str`, `text str` |
+| `0x801D` | WhisperFrom | `from str`, `text str` |
+| `0x801E` | WhisperResult | `code u8` (0 delivered, 1 not online, 2 yourself), `to str` |
+| `0x801F` | RoomSign | `roomId u32`, `ownerId u32`, `title str`, `members u8`, `limit u8`, `public u8` — show or update a room's sign |
+| `0x8020` | RoomGone | `roomId u32` |
+| `0x8021` | RoomEnter | `roomId u32`, `title str`, `limit u8`, `public u8`, `owner str`, `count u8`, then `count` × `name str` — you're in |
+| `0x8022` | RoomMember | `change u8` (0 left, 1 joined, 2 kicked), `name str` |
+| `0x8023` | RoomResult | `code u8`: 1 full, 2 wrong password, 3 kicked earlier, 4 gone or too far, 5 already in a room, 6 can't now, 7 bad settings |
+| `0x8024` | RoomLeft | `reason u8` (0 left, 1 kicked) — you're out |
+| `0x8025` | RoomSettings | `title str`, `limit u8`, `public u8`, `owner str` — sent to members after an edit or owner change |
+| `0x8026` | FloorItem | `id u32`, `itemId u16`, `amount u16`, `x u16`, `y u16`, `subX u8`, `subY u8` (0–15 within the cell), `dropped u8` (1 = just fell) |
+| `0x8027` | FloorItemGone | `id u32` — picked up or expired |
+| `0x8028` | PlayerPickUp | `id u32` — play a player's pick-up motion |
+| `0x8018` | SkillUse | `src u32`, `target u32`, `skillId u16`, `level u8` — a skill went off (its effect follows, e.g. Heal) |
 
 LoginResult codes: `0` logged in, `1` character created, `2` wrong password,
 `3` invalid name (4–23 of `A-Z a-z 0-9 _`), `4` invalid password (4–72 bytes),
@@ -110,6 +176,12 @@ map and its players. Configured in `cmd/server/main.go`:
 |---|---|
 | morocc (160, 297) — north gate | moc_fild07 (198, 25) |
 | moc_fild07 (198, 21) | morocc (160, 294) |
+| moc_fild07 (381, 201) ±2,16 — east edge | moc_fild06 (28, 201) |
+| moc_fild06 (18, 198) ±1,18 — west edge | moc_fild07 (378, 201) |
+
+Warps, spawns and monster stats follow eAthena's November 2004 data in
+`../reference/eathena-2004/` (the client is from August 2004; later RO patches
+renumbered the Sograt fields, e.g. moc_fild07's east exit became moc_fild20).
 
 **Walking:** PlayerMove lists cells after `(fromX, fromY)`. Each straight step
 takes `speed` ms, each diagonal step `speed × 1.4` ms. A new PlayerMove for the

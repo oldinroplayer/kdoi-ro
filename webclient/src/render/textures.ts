@@ -1,6 +1,7 @@
 // Loads BMP/JPG textures. RO uses pure magenta (255, 0, 255) as the transparent colour key.
 import * as THREE from "three";
 import { dataUrl } from "../assets";
+import { parseTga } from "../formats/tga";
 
 const cache = new Map<string, Promise<THREE.Texture>>();
 
@@ -21,6 +22,15 @@ export function loadTexture(path: string): Promise<THREE.Texture> {
 async function load(path: string): Promise<THREE.Texture> {
   const res = await fetch(dataUrl(path));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (path.endsWith(".tga")) {
+    // Browsers can't decode TGA; these carry real alpha, so no colour key.
+    const img = parseTga(await res.arrayBuffer());
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext("2d")!.putImageData(img, 0, 0);
+    return configure(new THREE.CanvasTexture(canvas));
+  }
   const bitmap = await createImageBitmap(await res.blob());
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;

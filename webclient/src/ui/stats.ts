@@ -1,5 +1,6 @@
 // Status window (Alt+A): base stats with + buttons, and derived battle stats.
 import type { Connection } from "../net";
+import { jobName } from "../render/character";
 import type { PlayerState } from "../state";
 import { formatZeny } from "./common";
 import { GameWindow } from "./window";
@@ -39,7 +40,7 @@ export class StatusWindow {
     head.className = "status-head";
     head.append(
       kv("Name", this.state.name),
-      kv("Job", "Novice"),
+      kv("Job", jobName(s.job)),
       kv("Base Lv", String(s.baseLevel)),
       kv("Job Lv", String(s.jobLevel)),
       kv("HP", `${s.hp} / ${s.maxHp}`),
@@ -62,7 +63,8 @@ export class StatusWindow {
       label.textContent = name;
       const value = document.createElement("span");
       value.className = "stat-value";
-      value.textContent = String(s.stats[i]);
+      value.textContent = s.bonus[i] ? `${s.stats[i]} + ${s.bonus[i]}` : String(s.stats[i]);
+      if (s.bonus[i]) value.title = `${s.bonus[i]} from your job level`;
       const plus = document.createElement("button");
       plus.type = "button";
       plus.className = "stat-plus";

@@ -119,7 +119,8 @@ export function itemIllustration(item: ItemInfo): Promise<string> {
   return keyedImage(`texture/유저인터페이스/collection/${item.resName}.bmp`);
 }
 
-function keyedImage(path: string): Promise<string> {
+/** A BMP from data/ as a data URL, magenta made transparent (cached). */
+export function keyedImage(path: string): Promise<string> {
   let p = imageCache.get(path);
   if (!p) {
     p = loadKeyedCanvas(path)

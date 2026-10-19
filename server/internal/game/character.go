@@ -60,8 +60,31 @@ type CharData struct {
 	SP           int           `json:"sp"`
 	Stats        [NumStats]int `json:"stats"`
 	StatusPoints int           `json:"status_points"`
-	Zeny         int           `json:"zeny"`
-	Inventory    []InvItem     `json:"inventory"`
+	Skills       map[int]int   `json:"skills"` // skill ID -> learned level
+	// Buffs are active skill buffs (skill ID -> level). They're not saved;
+	// the world removes them when they run out.
+	Buffs       map[int]int `json:"-"`
+	SkillPoints int         `json:"skill_points"`
+	Zeny        int         `json:"zeny"`
+	Inventory   []InvItem   `json:"inventory"`
+}
+
+// Clone returns a copy that shares no slices or maps with c.
+func (c CharData) Clone() CharData {
+	if c.Buffs != nil {
+		buffs := make(map[int]int, len(c.Buffs))
+		for id, lv := range c.Buffs {
+			buffs[id] = lv
+		}
+		c.Buffs = buffs
+	}
+	c.Inventory = append([]InvItem(nil), c.Inventory...)
+	skills := make(map[int]int, len(c.Skills))
+	for id, lv := range c.Skills {
+		skills[id] = lv
+	}
+	c.Skills = skills
+	return c
 }
 
 // NewChar returns a fresh Novice at the given position.
@@ -94,6 +117,7 @@ func (c *CharData) FillDefaults() {
 		c.StatusPoints = StartPoints
 		c.Zeny = StartZeny
 	}
+	c.fillSkillDefaults()
 	c.ClampVitals()
 }
 
@@ -126,7 +150,21 @@ func (c *CharData) Weight() int {
 }
 
 // MaxWeight follows RO: 2000 + 30 per STR.
-func (c *CharData) MaxWeight() int { return 2000 + 30*c.Stats[STR] }
+// MaxWeight follows RO: the job's base weight plus 30 per (base) STR, plus
+// Enlarge Weight Limit.
+func (c *CharData) MaxWeight() int {
+	return Job(c.Job).BaseWeight + 30*c.Stats[STR] + 200*c.SkillLevel(SkillEnlargeWeight)
+}
+
+// EffectiveStats are the base stats plus job, passive and buff bonuses.
+func (c *CharData) EffectiveStats() [NumStats]int {
+	s := c.Stats
+	b := c.statBonus()
+	for i := range s {
+		s[i] += b[i]
+	}
+	return s
+}
 
 // Purchase is one line of a shop order.
 type Purchase struct {
@@ -278,7 +316,7 @@ func (c *CharData) Sell(order []Sale) (earned int, err error) {
 		if wanted[s.Index] > it.Amount {
 			return 0, ErrNoSuchItem
 		}
-		earned += Items[it.ItemID].SellPrice() * s.Amount
+		earned += c.SellPrice(Items[it.ItemID]) * s.Amount
 	}
 	if c.Zeny+earned > MaxZeny {
 		return 0, ErrInventoryFull
@@ -290,24 +328,44 @@ func (c *CharData) Sell(order []Sale) (earned int, err error) {
 	return earned, nil
 }
 
-// Loot adds a dropped item if there's room and it isn't too heavy.
-func (c *CharData) Loot(itemID int) error {
+// PickUp adds items from the ground if there's room and they aren't too heavy.
+func (c *CharData) PickUp(itemID, amount int) error {
 	def, ok := Items[itemID]
-	if !ok {
+	if !ok || amount <= 0 {
 		return ErrUnknownItem
 	}
-	if c.Weight()+def.Weight > c.MaxWeight() {
+	if c.Weight()+def.Weight*amount > c.MaxWeight() {
 		return ErrOverweight
 	}
-	if def.Stackable() && c.find(itemID) >= 0 {
-		if c.amountOf(itemID) >= MaxStack {
+	switch {
+	case def.Stackable() && c.find(itemID) >= 0:
+		if c.amountOf(itemID)+amount > MaxStack {
 			return ErrInventoryFull
 		}
-	} else if len(c.Inventory) >= MaxInventory {
+	case def.Stackable():
+		if len(c.Inventory) >= MaxInventory {
+			return ErrInventoryFull
+		}
+	case len(c.Inventory)+amount > MaxInventory:
 		return ErrInventoryFull
 	}
-	c.add(itemID, 1)
+	c.add(itemID, amount)
 	return nil
+}
+
+// Drop takes items out of the inventory to put them on the ground. Worn
+// equipment has to be taken off first.
+func (c *CharData) Drop(index, amount int) (itemID int, err error) {
+	it := c.entry(index)
+	if it == nil || amount <= 0 || amount > it.Amount {
+		return 0, ErrNoSuchItem
+	}
+	if it.Equip != 0 {
+		return 0, ErrEquipped
+	}
+	itemID = it.ItemID
+	c.removeAmount(index, amount)
+	return itemID, nil
 }
 
 // Equip wears the item at index, taking off whatever occupied its slot.
@@ -322,6 +380,9 @@ func (c *CharData) Equip(index int) error {
 	}
 	if c.BaseLevel < def.EquipLevel {
 		return ErrLevelTooLow
+	}
+	if !def.CanUse(c.Job) {
+		return ErrWrongJob
 	}
 	for i := range c.Inventory {
 		if c.Inventory[i].Equip&def.Slot != 0 {
@@ -343,6 +404,8 @@ func (c *CharData) Unequip(index int) error {
 
 // Derived are the computed battle stats shown in the status window.
 type Derived struct {
+	WeaponType, Range int           // equipped weapon class and attack reach in cells
+	Bonus             [NumStats]int // job level stat bonuses
 	MaxHP, MaxSP      int
 	Atk, Atk2         int // status ATK + equipment ATK
 	MatkMin, MatkMax  int
@@ -356,11 +419,17 @@ type Derived struct {
 
 // Derive computes battle stats with pre-renewal formulas (Novice job values).
 func (c *CharData) Derive() Derived {
+	job := Job(c.Job)
+	bonus := c.statBonus()
 	s := c.Stats
+	for i := range s {
+		s[i] += bonus[i]
+	}
 	lv := c.BaseLevel
 	d := Derived{
-		MaxHP:     (35 + 5*lv) * (100 + s[VIT]) / 100,
-		MaxSP:     (10 + lv) * (100 + s[INT]) / 100,
+		Bonus:     bonus,
+		MaxHP:     job.MaxHP(lv, s[VIT]),
+		MaxSP:     job.MaxSP(lv, s[INT]),
 		Atk:       s[STR] + (s[STR]/10)*(s[STR]/10) + s[DEX]/5 + s[LUK]/5,
 		MatkMin:   s[INT] + (s[INT]/7)*(s[INT]/7),
 		MatkMax:   s[INT] + (s[INT]/5)*(s[INT]/5),
@@ -373,7 +442,7 @@ func (c *CharData) Derive() Derived {
 		Weight:    c.Weight(),
 		MaxWeight: c.MaxWeight(),
 	}
-	baseDelay := 500 // bare hands
+	weapon, reach := WeaponFist, 1
 	for _, it := range c.Inventory {
 		if it.Equip == 0 {
 			continue
@@ -382,9 +451,14 @@ func (c *CharData) Derive() Derived {
 		d.Atk2 += def.Atk
 		d.Def += def.Def
 		if def.Type == TypeWeapon {
-			baseDelay = 650 // Novice with a dagger/sword
+			weapon = def.WeaponType
+			reach = max(def.Range, 1)
 		}
 	}
+	d.WeaponType, d.Range = weapon, reach
+	c.applyPassives(&d)
+	// Attack speed from the job's base delay for the weapon type (eAthena pc.c).
+	baseDelay := job.AttackDelay[weapon]
 	delay := baseDelay - baseDelay*(4*s[AGI]+s[DEX])/1000
 	d.Aspd = 200 - delay/10
 	return d

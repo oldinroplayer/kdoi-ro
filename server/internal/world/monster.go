@@ -150,8 +150,9 @@ func (w *World) tickMonster(mob *Monster, now time.Time) {
 	}
 }
 
-// killMonster removes a dead monster, shares out EXP by damage dealt, gives
-// its drops to whoever did the most damage, and schedules its respawn.
+// killMonster removes a dead monster, shares out EXP by damage dealt, drops
+// its loot on the ground (whoever did the most damage gets first pick), and
+// schedules its respawn.
 func (w *World) killMonster(mob *Monster, now time.Time) {
 	delete(w.monsters, mob.id)
 	delete(mob.m.monsters, mob.id)
@@ -180,9 +181,11 @@ func (w *World) killMonster(mob *Monster, now time.Time) {
 			looter, most = p, d
 		}
 	}
+	var owner uint32
 	if looter != nil {
-		w.loot(looter, mob.def)
+		owner = looter.id
 	}
+	w.dropLoot(mob, owner, now)
 	for _, p := range mob.m.players {
 		if p.target == mob.id {
 			p.target = 0
@@ -196,23 +199,11 @@ func (w *World) killMonster(mob *Monster, now time.Time) {
 	w.respawns = append(w.respawns, respawn{at: now.Add(delay), spawn: mob.spawn})
 }
 
-// loot rolls a monster's drops straight into the player's inventory (RO's autoloot).
-func (w *World) loot(p *Player, def *game.MobDef) {
-	got := false
-	for _, d := range def.Drops {
-		if w.rng.IntN(10000) >= d.Rate {
-			continue
+// dropLoot rolls a monster's drops onto the ground around its corpse.
+func (w *World) dropLoot(mob *Monster, owner uint32, now time.Time) {
+	for _, d := range mob.def.Drops {
+		if w.rng.IntN(10000) < d.Rate {
+			w.dropItem(mob.m, mob.x, mob.y, d.ItemID, 1, owner, now)
 		}
-		name := game.Items[d.ItemID].Name
-		if err := p.data.Loot(d.ItemID); err != nil {
-			p.out.Send(proto.Message(name + " dropped, but you couldn't carry it."))
-			continue
-		}
-		p.out.Send(proto.Message("You got " + name + "."))
-		got = true
-	}
-	if got {
-		w.sendInventory(p)
-		w.sendStatus(p)
 	}
 }

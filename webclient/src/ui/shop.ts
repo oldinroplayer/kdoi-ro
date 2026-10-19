@@ -97,6 +97,11 @@ export class ShopWindow {
     this.render();
   }
 
+  /** Half the item's price, raised by the seller's Overcharge. */
+  private sellPrice(info: ItemInfo): number {
+    return Math.floor((Math.floor(info.price / 2) * (this.shop?.sellRate ?? 100)) / 100);
+  }
+
   private priceOf(itemId: number): number {
     return this.shop?.items.find((i) => i.itemId === itemId)?.price ?? 0;
   }
@@ -163,7 +168,7 @@ export class ShopWindow {
       this.catalogue.replaceChildren(
         ...sellable.map((it) => {
           const info = db.get(it.itemId)!;
-          const li = row(info, `${formatZeny(sellPrice(info))} each`, it.amount);
+          const li = row(info, `${formatZeny(this.sellPrice(info))} each`, it.amount);
           const left = it.amount - (this.sellCart.get(it.index) ?? 0);
           const add = addButton(info, () => this.setAmount(this.sellCart, it.index, (this.sellCart.get(it.index) ?? 0) + 1, it.amount));
           add.disabled = left <= 0;
@@ -176,13 +181,13 @@ export class ShopWindow {
     this.renderCart(
       [...this.sellCart].map(([index, amount]) => {
         const info = db.get(byIndex.get(index)!.itemId)!;
-        return { key: index, info, amount, price: sellPrice(info), max: byIndex.get(index)!.amount };
+        return { key: index, info, amount, price: this.sellPrice(info), max: byIndex.get(index)!.amount };
       }),
       this.sellCart,
       MAX_AMOUNT,
     );
 
-    const total = [...this.sellCart].reduce((sum, [index, n]) => sum + sellPrice(db.get(byIndex.get(index)!.itemId)!) * n, 0);
+    const total = [...this.sellCart].reduce((sum, [index, n]) => sum + this.sellPrice(db.get(byIndex.get(index)!.itemId)!) * n, 0);
     this.summary.replaceChildren(line("You receive", formatZeny(total)), line("You have", formatZeny(this.state.status?.zeny ?? 0)));
     this.actionButton.textContent = "Sell";
     this.actionButton.disabled = this.waiting || this.sellCart.size === 0;
@@ -238,7 +243,6 @@ export class ShopWindow {
   }
 }
 
-const sellPrice = (info: ItemInfo) => Math.floor(info.price / 2);
 
 function row(info: ItemInfo, priceText: string, amount = 1): HTMLLIElement {
   const li = document.createElement("li");

@@ -4,13 +4,19 @@
     {
       "name": "server",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd server && go run ./cmd/server"],
+      "runtimeArgs": [
+        "-c",
+        "cd server && go run ./cmd/server"
+      ],
       "port": 7000
     },
     {
       "name": "webclient",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd webclient && npx vite --port 5173 --strictPort"],
+      "runtimeArgs": [
+        "-c",
+        "cd webclient && npx vite --port 5173 --strictPort"
+      ],
       "port": 5173
     }
   ]

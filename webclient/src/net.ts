@@ -32,8 +32,18 @@ export type ServerPacket =
       speed: number;
       dead: boolean;
       look: Look;
+      sitting: boolean;
     }
   | { type: "look"; id: number; look: Look }
+  | { type: "sit"; id: number; sitting: boolean }
+  | { type: "turn"; id: number; dir: number }
+  | { type: "skills"; points: number; levels: Map<number, number> }
+  /** skillId 0 means the cast was cancelled. */
+  | { type: "skillCast"; src: number; target: number; skillId: number; castMs: number }
+  | { type: "skillUse"; src: number; target: number; skillId: number; level: number }
+  /** An NPC talking to us; no options means just a Close button. */
+  | { type: "npcDialog"; npcId: number; name: string; text: string; options: string[] }
+  | { type: "job"; id: number; job: number }
   | { type: "disappear"; id: number; died: boolean }
   | { type: "monster"; id: number; mobId: number; name: string; sprite: string; x: number; y: number; dir: number; speed: number }
   | {
@@ -47,19 +57,53 @@ export type ServerPacket =
       motion: number;
       /** How long the target flinches in ms (0 = no flinch). */
       hurt: number;
+      /** The skill that did it (0 = a normal attack). */
+      skillId: number;
+      /** Blows the damage is split over (bolts, Double Strafe, Double Attack). */
+      hits: number;
     }
+  /** A buff starting (ms > 0) or ending (ms = 0) on a unit. */
+  | { type: "buff"; id: number; skillId: number; level: number; ms: number }
   | { type: "dead"; id: number }
-  | { type: "levelUp"; id: number; job: boolean }
+  /** kind: 0 base level, 1 job level, 2 job change. */
+  | { type: "levelUp"; id: number; kind: number }
   | { type: "heal"; id: number; amount: number }
   | { type: "move"; id: number; fromX: number; fromY: number; steps: [number, number][] }
   | { type: "stop"; id: number; x: number; y: number }
   | { type: "portal"; x: number; y: number }
   | { type: "npc"; id: number; name: string; sprite: string; x: number; y: number; dir: number }
-  | { type: "shopOpen"; npcId: number; npcName: string; items: { itemId: number; price: number }[] }
+  /** sellRate: percent of half price the shop pays (more than 100 with Overcharge). */
+  | { type: "shopOpen"; npcId: number; npcName: string; items: { itemId: number; price: number }[]; sellRate: number }
   | { type: "shopResult"; code: number }
   | { type: "inventory"; items: InvItem[] }
   | { type: "status"; status: Status }
-  | { type: "message"; text: string };
+  | { type: "message"; text: string }
+  /** kind 0: said out loud nearby; 1: said in our chat room. */
+  | { type: "chat"; id: number; kind: number; name: string; text: string }
+  | { type: "whisperFrom"; from: string; text: string }
+  /** code 0 delivered, 1 not online, 2 that's you. */
+  | { type: "whisperResult"; code: number; to: string }
+  | { type: "roomSign"; roomId: number; ownerId: number; title: string; members: number; limit: number; public: boolean }
+  | { type: "roomGone"; roomId: number }
+  | { type: "roomEnter"; roomId: number; title: string; limit: number; public: boolean; owner: string; members: string[] }
+  /** change 0 left, 1 joined, 2 kicked. */
+  | { type: "roomMember"; change: number; name: string }
+  | { type: "roomResult"; code: number }
+  /** reason 0 we left, 1 we were kicked. */
+  | { type: "roomLeft"; reason: number }
+  | { type: "roomSettings"; title: string; limit: number; public: boolean; owner: string }
+  /** An item on the ground; sub-cell position 0-15; dropped = it just fell. */
+  | { type: "floorItem"; id: number; itemId: number; amount: number; x: number; y: number; subX: number; subY: number; dropped: boolean }
+  | { type: "floorItemGone"; id: number }
+  | { type: "pickUp"; id: number };
+
+/** A chat room's title, size and privacy. */
+export interface RoomSettings {
+  title: string;
+  limit: number;
+  public: boolean;
+  password: string;
+}
 
 /** Visible equipment as item IDs (0 = none). */
 export interface Look {
@@ -110,6 +154,10 @@ export interface Status {
   baseNext: number;
   jobExp: number;
   jobNext: number;
+  /** RO class ID: 0 Novice, 1 Swordman ... 6 Thief. */
+  job: number;
+  /** Job level stat bonuses (STR..LUK), shown as "9 + 1". */
+  bonus: number[];
 }
 
 export const ShopCode = { OK: 0, NoZeny: 1, Overweight: 2, Full: 3, Invalid: 4, Sold: 5 } as const;
@@ -146,8 +194,69 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
       return { type: "enterMap", selfId: u32(), map: str(), x: u16(), y: u16(), dir: u8(), job: u16(), speed: u16(), look: look() };
     case 0x8003: {
       const id = u32(), name = str(), job = u16(), x = u16(), y = u16(), dir = u8(), speed = u16(), dead = u8() === 1;
-      return { type: "appear", id, name, job, x, y, dir, speed, dead, look: look() };
+      const appearance = look();
+      return { type: "appear", id, name, job, x, y, dir, speed, dead, look: appearance, sitting: u8() === 1 };
     }
+    case 0x8014:
+      return { type: "sit", id: u32(), sitting: u8() === 1 };
+    case 0x8015:
+      return { type: "turn", id: u32(), dir: u8() };
+    case 0x8016: {
+      const points = u16(), n = u16();
+      const levels = new Map<number, number>();
+      for (let i = 0; i < n; i++) levels.set(u16(), u8());
+      return { type: "skills", points, levels };
+    }
+    case 0x8017:
+      return { type: "skillCast", src: u32(), target: u32(), skillId: u16(), castMs: u16() };
+    case 0x8018:
+      return { type: "skillUse", src: u32(), target: u32(), skillId: u16(), level: u8() };
+    case 0x8019: {
+      const npcId = u32(), name = str();
+      const len = u16();
+      o += len;
+      const text = textDecoder.decode(new Uint8Array(buf, o - len, len));
+      const n = u8();
+      const options: string[] = [];
+      for (let i = 0; i < n; i++) options.push(str());
+      return { type: "npcDialog", npcId, name, text, options };
+    }
+    case 0x801c:
+      return { type: "chat", id: u32(), kind: u8(), name: str(), text: str() };
+    case 0x801d:
+      return { type: "whisperFrom", from: str(), text: str() };
+    case 0x801e:
+      return { type: "whisperResult", code: u8(), to: str() };
+    case 0x801f:
+      return { type: "roomSign", roomId: u32(), ownerId: u32(), title: str(), members: u8(), limit: u8(), public: u8() === 1 };
+    case 0x8020:
+      return { type: "roomGone", roomId: u32() };
+    case 0x8021: {
+      const roomId = u32(), title = str(), limit = u8(), isPublic = u8() === 1, owner = str(), n = u8();
+      const members: string[] = [];
+      for (let i = 0; i < n; i++) members.push(str());
+      return { type: "roomEnter", roomId, title, limit, public: isPublic, owner, members };
+    }
+    case 0x8022:
+      return { type: "roomMember", change: u8(), name: str() };
+    case 0x8023:
+      return { type: "roomResult", code: u8() };
+    case 0x8024:
+      return { type: "roomLeft", reason: u8() };
+    case 0x8025:
+      return { type: "roomSettings", title: str(), limit: u8(), public: u8() === 1, owner: str() };
+    case 0x8026:
+      return {
+        type: "floorItem", id: u32(), itemId: u16(), amount: u16(), x: u16(), y: u16(), subX: u8(), subY: u8(), dropped: u8() === 1,
+      };
+    case 0x8027:
+      return { type: "floorItemGone", id: u32() };
+    case 0x8028:
+      return { type: "pickUp", id: u32() };
+    case 0x801b:
+      return { type: "buff", id: u32(), skillId: u16(), level: u8(), ms: u32() };
+    case 0x801a:
+      return { type: "job", id: u32(), job: u16() };
     case 0x8013:
       return { type: "look", id: u32(), look: look() };
     case 0x8004:
@@ -168,7 +277,7 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
       const npcId = u32(), npcName = str(), n = u16();
       const items = [];
       for (let i = 0; i < n; i++) items.push({ itemId: u16(), price: u32() });
-      return { type: "shopOpen", npcId, npcName, items };
+      return { type: "shopOpen", npcId, npcName, items, sellRate: u16() };
     }
     case 0x800a:
       return { type: "shopResult", code: u8() };
@@ -190,6 +299,7 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
         hp, maxHp, sp, maxSp, atk, atk2, matkMin, matkMax, def, def2, mdef, mdef2, hit, flee, flee2, crit, aspd,
         weight: u32(), maxWeight: u32(),
         baseExp: u32(), baseNext: u32(), jobExp: u32(), jobNext: u32(),
+        job: u16(), bonus: [u8(), u8(), u8(), u8(), u8(), u8()],
       };
       return { type: "status", status };
     }
@@ -199,12 +309,13 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
       return { type: "monster", id: u32(), mobId: u16(), name: str(), sprite: str(), x: u16(), y: u16(), dir: u8(), speed: u16() };
     case 0x800f: {
       const src = u32(), target = u32(), damage = u32(), flags = u8();
-      return { type: "damage", src, target, damage, miss: (flags & 1) !== 0, crit: (flags & 2) !== 0, motion: u16(), hurt: u16() };
+      const motion = u16(), hurt = u16();
+      return { type: "damage", src, target, damage, miss: (flags & 1) !== 0, crit: (flags & 2) !== 0, motion, hurt, skillId: u16(), hits: u8() };
     }
     case 0x8010:
       return { type: "dead", id: u32() };
     case 0x8011:
-      return { type: "levelUp", id: u32(), job: u8() === 1 };
+      return { type: "levelUp", id: u32(), kind: u8() };
     case 0x8012:
       return { type: "heal", id: u32(), amount: u16() };
     default:
@@ -304,6 +415,46 @@ export class Connection {
     this.send(0x0009, (v) => v.setUint16(2, index, true), 2);
   }
 
+  /** Sit down (true) or stand up (false). */
+  sit(sitting: boolean): void {
+    this.send(0x000c, (v) => v.setUint8(2, sitting ? 1 : 0), 1);
+  }
+
+  /** Answer an NPC dialog: an option index, or 255 to walk away. */
+  npcReply(npcId: number, choice: number): void {
+    this.send(
+      0x0010,
+      (v) => {
+        v.setUint32(2, npcId, true);
+        v.setUint8(6, choice);
+      },
+      5,
+    );
+  }
+
+  /** Spend a skill point on a skill. */
+  learnSkill(skillId: number): void {
+    this.send(0x000e, (v) => v.setUint16(2, skillId, true), 2);
+  }
+
+  /** Use a skill (level 0 = highest learned) on a target unit (0 for self skills). */
+  useSkill(skillId: number, level = 0, targetId = 0): void {
+    this.send(
+      0x000f,
+      (v) => {
+        v.setUint16(2, skillId, true);
+        v.setUint16(4, level, true);
+        v.setUint32(6, targetId, true);
+      },
+      8,
+    );
+  }
+
+  /** Face a direction without moving (0 N, 1 NW ... 7 NE). */
+  turn(dir: number): void {
+    this.send(0x000d, (v) => v.setUint8(2, dir), 1);
+  }
+
   /** Return to the save point after being knocked out. */
   respawn(): void {
     this.send(0x000a, () => {}, 0);
@@ -322,6 +473,73 @@ export class Connection {
         });
       },
       6 + lines.length * 4,
+    );
+  }
+
+  /** Say something: out loud to everyone nearby, or to our chat room. */
+  chat(text: string): void {
+    this.sendFields(0x0011, [text]);
+  }
+
+  whisper(to: string, text: string): void {
+    this.sendFields(0x0012, [to, text]);
+  }
+
+  createRoom(s: RoomSettings): void {
+    this.sendFields(0x0013, roomFields(s));
+  }
+
+  updateRoom(s: RoomSettings): void {
+    this.sendFields(0x0017, roomFields(s));
+  }
+
+  joinRoom(roomId: number, password = ""): void {
+    this.sendFields(0x0014, [{ u32: roomId }, password]);
+  }
+
+  leaveRoom(): void {
+    this.sendFields(0x0015, []);
+  }
+
+  kickFromRoom(name: string): void {
+    this.sendFields(0x0016, [name]);
+  }
+
+  /** Hand our chat room to another member. */
+  giveRoom(name: string): void {
+    this.sendFields(0x0018, [name]);
+  }
+
+  /** Sends strings (u8 length + UTF-8, at most 255 bytes) and numbers. */
+  private sendFields(op: number, fields: (string | { u8: number } | { u32: number })[]): void {
+    const parts: number[] = [op & 0xff, op >> 8];
+    for (const f of fields) {
+      if (typeof f === "string") {
+        const b = textEncoder.encode(f).slice(0, 255);
+        parts.push(b.length, ...b);
+      } else if ("u8" in f) {
+        parts.push(f.u8 & 0xff);
+      } else {
+        parts.push(f.u32 & 0xff, (f.u32 >> 8) & 0xff, (f.u32 >> 16) & 0xff, (f.u32 >>> 24) & 0xff);
+      }
+    }
+    this.ws?.send(new Uint8Array(parts));
+  }
+
+  /** Walk to an item on the ground and pick it up. */
+  pickUp(floorItemId: number): void {
+    this.send(0x0019, (v) => v.setUint32(2, floorItemId, true), 4);
+  }
+
+  /** Drop inventory items on the ground at our feet. */
+  dropItem(index: number, amount: number): void {
+    this.send(
+      0x001a,
+      (v) => {
+        v.setUint16(2, index, true);
+        v.setUint16(4, amount, true);
+      },
+      4,
     );
   }
 
@@ -344,4 +562,8 @@ export class Connection {
     b.setUint16(4, y, true);
     this.ws?.send(b.buffer);
   }
+}
+
+function roomFields(s: RoomSettings) {
+  return [s.title, { u8: s.limit }, { u8: s.public ? 1 : 0 }, s.public ? "" : s.password];
 }

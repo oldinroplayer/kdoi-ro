@@ -33,6 +33,7 @@
           <span id="hud-pos" class="hud-sub"></span>
           <span id="hud-zeny" class="hud-zeny"></span>
         </div>
+        <div id="buffs" class="buffs" aria-label="Buffs" hidden></div>
       </div>
       <div class="hud-right">
       <div class="hud-menu">
@@ -47,6 +48,9 @@
           <button id="menu-inventory" type="button" role="menuitem">Inventory <kbd>Alt+E</kbd></button>
           <button id="menu-equipment" type="button" role="menuitem">Equipment <kbd>Alt+Q</kbd></button>
           <button id="menu-status" type="button" role="menuitem">Status <kbd>Alt+A</kbd></button>
+          <button id="menu-skills" type="button" role="menuitem">Skills <kbd>Alt+S</kbd></button>
+          <button id="menu-sit" type="button" role="menuitem">Sit / Stand <kbd>Insert</kbd></button>
+          <button id="menu-room" type="button" role="menuitem">Chat Room <kbd>Alt+C</kbd></button>
           <button id="menu-sound" type="button" role="menuitem">Sound</button>
           <hr />
           <button id="logout-button" type="button" role="menuitem">Log out</button>
@@ -54,7 +58,13 @@
       </div>
       <div id="minimap"></div>
       </div>
-      <div class="hud-hint">Click to walk, talk or attack · F1 uses a potion · Right-drag to rotate · Wheel to zoom · Esc for menu</div>
+      <div id="chat" class="chat">
+        <div class="chat-log" role="log" aria-live="polite" aria-label="Chat"></div>
+        <form class="chat-form">
+          <input type="text" maxlength="120" autocomplete="off" aria-label="Chat message"
+                 placeholder="Enter to chat · /w Name message to whisper" />
+        </form>
+      </div>
     </div>
 
     <div id="death" class="death" role="alertdialog" aria-labelledby="death-title" hidden>
@@ -65,6 +75,7 @@
       </div>
     </div>
 
+    <div id="hotbar"></div>
     <div id="windows"></div>
     <div id="tooltip" role="tooltip" hidden></div>
     <div id="toasts" aria-live="polite"></div>

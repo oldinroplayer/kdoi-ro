@@ -19,7 +19,7 @@ const FOOT_Y = 176;
  * Player ACT action groups; the action index is group * 8 + direction.
  * Weapons and shields only have frames in Ready (battle stance) and attacks.
  */
-export const PlayerAction = { Idle: 0, Walk: 1, Ready: 4, Attack: 10, Hurt: 6, Dead: 8 } as const;
+export const PlayerAction = { Idle: 0, Walk: 1, Sit: 2, Ready: 4, Attack: 10, AttackSword: 11, Hurt: 6, Dead: 8 } as const;
 
 /** Monster ACT action groups. */
 export const MonsterAction = { Idle: 0, Walk: 1, Attack: 2, Hurt: 3, Die: 4 } as const;
@@ -63,16 +63,37 @@ export interface CharacterAssets {
   shadow: SpriteSet;
 }
 
-let novice: Promise<CharacterAssets> | null = null;
+/** RO class ID -> the Korean name its sprites are filed under, and its English name. */
+const JOBS: [string, string][] = [
+  ["초보자", "Novice"],
+  ["검사", "Swordman"],
+  ["마법사", "Mage"],
+  ["궁수", "Archer"],
+  ["성직자", "Acolyte"],
+  ["상인", "Merchant"],
+  ["도둑", "Thief"],
+];
 
-/** Male Novice body with the default hairstyle. */
-export function loadNoviceAssets(): Promise<CharacterAssets> {
-  novice ??= Promise.all([
-    loadSpriteSet("sprite/인간족/몸통/남/초보자_남"),
-    loadSpriteSet("sprite/인간족/머리통/남/2_남"),
-    loadSpriteSet("sprite/shadow"),
-  ]).then(([body, head, shadow]) => ({ body, head, shadow }));
-  return novice;
+const jobFolder = (job: number) => (JOBS[job] ?? JOBS[0])[0];
+
+/** A job's display name (Novice for unknown IDs). */
+export const jobName = (job: number) => (JOBS[job] ?? JOBS[0])[1];
+
+const playerAssets = new Map<number, Promise<CharacterAssets>>();
+
+/** A male character of a job, with the default hairstyle. */
+export function loadPlayerAssets(job: number): Promise<CharacterAssets> {
+  let p = playerAssets.get(job);
+  if (!p) {
+    p = Promise.all([
+      loadSpriteSet(`sprite/인간족/몸통/남/${jobFolder(job)}_남`),
+      loadSpriteSet("sprite/인간족/머리통/남/2_남"),
+      loadSpriteSet("sprite/shadow"),
+    ]).then(([body, head, shadow]) => ({ body, head, shadow }));
+    p.catch(() => playerAssets.delete(job));
+    playerAssets.set(job, p);
+  }
+  return p;
 }
 
 const oneSpriteAssets = new Map<string, Promise<CharacterAssets>>();
@@ -93,11 +114,32 @@ export const loadNpcAssets = (sprite: string) => loadOneSprite(`sprite/npc/${spr
 /** A monster sprite from data/sprite/몬스터/. */
 export const loadMonsterAssets = (sprite: string) => loadOneSprite(`sprite/몬스터/${sprite}`);
 
+/** An item lying on the ground: data/sprite/아이템/<resource name>, no shadow. */
+export async function loadItemAssets(resName: string): Promise<CharacterAssets> {
+  const body = await loadSpriteSet(`sprite/아이템/${resName}`);
+  return { body, shadow: { act: { actions: [], sounds: [] }, indexed: [], rgba: [] } };
+}
+
+/** An effect sprite from data/sprite/이팩트/, drawn without a shadow. */
+export async function loadEffectAssets(name: string): Promise<CharacterAssets> {
+  const body = await loadSpriteSet(`sprite/이팩트/${name}`);
+  return { body, shadow: { act: { actions: [], sounds: [] }, indexed: [], rgba: [] } };
+}
+
 /** Sprite layers for visible equipment (male Novice for now). */
 export interface EquipLayers {
   weapon?: SpriteSet;
+  /** The weapon class's swing trail (검광), drawn over the weapon while attacking. */
+  slash?: SpriteSet;
   shield?: SpriteSet;
   headgear: SpriteSet[];
+}
+
+/** Weapon class sprite name by item ID range (RO's item_db numbering). */
+function weaponClass(itemId: number): string | undefined {
+  if (itemId >= 1100 && itemId < 1200) return "검"; // one-handed swords
+  if (itemId >= 1200 && itemId < 1300) return "단검"; // daggers
+  return undefined;
 }
 
 export const noEquipment: EquipLayers = { headgear: [] };
@@ -106,7 +148,12 @@ export const noEquipment: EquipLayers = { headgear: [] };
  * Loads the sprites for a look. spriteOf maps an item ID to its sprite name
  * (from the item database); items without one, or missing files, are skipped.
  */
-export async function loadEquipLayers(look: Look, spriteOf: (itemId: number) => string | undefined): Promise<EquipLayers> {
+export async function loadEquipLayers(
+  look: Look,
+  spriteOf: (itemId: number) => string | undefined,
+  job: number,
+): Promise<EquipLayers> {
+  const folder = jobFolder(job);
   const load = async (itemId: number, path: (name: string) => string) => {
     const name = itemId ? spriteOf(itemId) : undefined;
     if (!name) return undefined;
@@ -117,15 +164,19 @@ export async function loadEquipLayers(look: Look, spriteOf: (itemId: number) => 
       return undefined;
     }
   };
-  const [weapon, shield, top, mid, low] = await Promise.all([
-    load(look.weapon, (n) => `sprite/인간족/초보자/초보자_남_${n}`),
-    load(look.shield, (n) => `sprite/방패/초보자/초보자_남_${n}`),
+  const slashClass = look.weapon ? weaponClass(look.weapon) : undefined;
+  const [weapon, slash, shield, top, mid, low] = await Promise.all([
+    load(look.weapon, (n) => `sprite/인간족/${folder}/${folder}_남_${n}`),
+    slashClass
+      ? loadSpriteSet(`sprite/인간족/${folder}/${folder}_남_${slashClass}_검광`).catch(() => undefined)
+      : Promise.resolve(undefined),
+    load(look.shield, (n) => `sprite/방패/${folder}/${folder}_남_${n}`),
     load(look.headTop, (n) => `sprite/악세사리/남/남_${n}`),
     load(look.headMid, (n) => `sprite/악세사리/남/남_${n}`),
     load(look.headLow, (n) => `sprite/악세사리/남/남_${n}`),
   ]);
   // RO draws lower, then middle, then upper headgear.
-  return { weapon, shield, headgear: [low, mid, top].filter((s): s is SpriteSet => !!s) };
+  return { weapon, slash, shield, headgear: [low, mid, top].filter((s): s is SpriteSet => !!s) };
 }
 
 export class CharacterSprite {
@@ -199,7 +250,7 @@ export class CharacterSprite {
       const action = set?.act.actions[group * 8 + dir];
       return action?.frames[frame % Math.max(1, action.frames.length)];
     };
-    const { weapon, shield, headgear } = this.equipment;
+    const { weapon, slash, shield, headgear } = this.equipment;
     // Facing away (west through north-east), the shield arm is behind the body.
     const shieldBehind = dir >= 2 && dir <= 5;
     const shieldFrame = frameOf(shield);
@@ -221,6 +272,8 @@ export class CharacterSprite {
 
     const weaponFrame = frameOf(weapon);
     if (weapon && weaponFrame) drawFrame(ctx, weapon, weaponFrame, 0, 0);
+    const slashFrame = frameOf(slash);
+    if (slash && slashFrame) drawFrame(ctx, slash, slashFrame, 0, 0);
     if (shield && shieldFrame && !shieldBehind) drawFrame(ctx, shield, shieldFrame, 0, 0);
 
     this.texture.needsUpdate = true;

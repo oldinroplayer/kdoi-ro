@@ -24,6 +24,10 @@ const (
 	writeTimeout     = 10 * time.Second
 	outboxSize       = 256
 	minMoveInterval  = 100 * time.Millisecond
+	// Chat flood guard: at most chatBurst lines per chatWindow; extra lines
+	// are dropped with a notice.
+	chatBurst  = 5
+	chatWindow = 3 * time.Second
 )
 
 // Spawn is where new characters (and characters on unknown maps) appear.
@@ -124,6 +128,19 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 	go sess.writeLoop(ctx)
 
 	var lastMove time.Time
+	var chatTimes []time.Time // when recent chat lines were sent
+	chatAllowed := func() bool {
+		now := time.Now()
+		for len(chatTimes) > 0 && now.Sub(chatTimes[0]) > chatWindow {
+			chatTimes = chatTimes[1:]
+		}
+		if len(chatTimes) >= chatBurst {
+			sess.Send(proto.Message("You're talking too fast. Wait a moment."))
+			return false
+		}
+		chatTimes = append(chatTimes, now)
+		return true
+	}
 	for {
 		pkt, err := readPacket(ctx, sess.conn)
 		if err != nil {
@@ -151,8 +168,42 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 			err = s.world.UseItem(id, int(p.Index))
 		case *proto.Respawn:
 			err = s.world.Respawn(id)
+		case *proto.Sit:
+			err = s.world.Sit(id, p.Sit)
+		case *proto.Turn:
+			err = s.world.Turn(id, p.Dir)
+		case *proto.NpcReply:
+			err = s.world.NpcReply(id, p.NpcID, p.Choice)
+		case *proto.Learn:
+			err = s.world.LearnSkill(id, int(p.SkillID))
+		case *proto.UseSkill:
+			err = s.world.UseSkill(id, int(p.SkillID), int(p.Level), p.TargetID)
 		case *proto.ShopSell:
 			err = s.world.Sell(id, p.NpcID, p.Lines)
+		case *proto.Chat:
+			if chatAllowed() {
+				err = s.world.Chat(id, p.Text)
+			}
+		case *proto.Whisper:
+			if chatAllowed() {
+				err = s.world.Whisper(id, p.To, p.Text)
+			}
+		case *proto.RoomCreate:
+			err = s.world.CreateRoom(id, p.RoomSettings)
+		case *proto.RoomJoin:
+			err = s.world.JoinRoom(id, p.RoomID, p.Password)
+		case *proto.RoomLeave:
+			err = s.world.LeaveRoom(id)
+		case *proto.RoomKick:
+			err = s.world.KickFromRoom(id, p.Name)
+		case *proto.RoomUpdate:
+			err = s.world.UpdateRoom(id, p.RoomSettings)
+		case *proto.RoomOwner:
+			err = s.world.GiveRoom(id, p.Name)
+		case *proto.PickUp:
+			err = s.world.PickUp(id, p.ItemID)
+		case *proto.DropItem:
+			err = s.world.DropItem(id, int(p.Index), int(p.Amount))
 		default:
 			return websocket.StatusPolicyViolation, "unexpected packet"
 		}

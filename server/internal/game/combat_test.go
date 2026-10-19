@@ -30,9 +30,9 @@ func TestAddExpLevelsUp(t *testing.T) {
 
 func TestExpStopsAtCaps(t *testing.T) {
 	c := NewChar("morocc", 0, 0)
-	c.JobLevel = MaxJobLevel
+	c.JobLevel = Job(JobNovice).MaxJobLevel()
 	c.AddExp(0, 1000)
-	if c.JobLevel != MaxJobLevel || c.JobExp != 0 || c.JobNext() != 0 {
+	if c.JobLevel != Job(JobNovice).MaxJobLevel() || c.JobExp != 0 || c.JobNext() != 0 {
 		t.Fatalf("job cap: %+v", c)
 	}
 }
@@ -102,7 +102,7 @@ func TestUseItemHeals(t *testing.T) {
 func TestSellAndLoot(t *testing.T) {
 	c := NewChar("morocc", 0, 0)
 	for range 5 {
-		if err := c.Loot(909); err != nil {
+		if err := c.PickUp(909, 1); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -123,7 +123,26 @@ func TestSellAndLoot(t *testing.T) {
 
 	c.Stats[STR] = 1
 	c.add(1010, 101) // 101 Phracon = 2020 weight, over the 2030 limit with the knife
-	if err := c.Loot(1010); !errors.Is(err, ErrOverweight) {
+	if err := c.PickUp(1010, 1); !errors.Is(err, ErrOverweight) {
 		t.Fatalf("looting when overweight: %v", err)
+	}
+}
+
+func TestShelledPickyDropsEggShell(t *testing.T) {
+	var rate int
+	for _, d := range Mobs[1050].Drops {
+		if d.ItemID == 5015 {
+			rate = d.Rate
+		}
+	}
+	if rate != 1000 {
+		t.Fatalf("Egg Shell drop rate = %d, want 1000 (10%%)", rate)
+	}
+	c := NewChar("morocc", 0, 0)
+	if err := c.PickUp(5015, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Equip(c.Inventory[0].Index); err != nil || c.Derive().Def != 3 || c.Look().HeadTop != 5015 {
+		t.Fatalf("wearing Egg Shell: err=%v def=%d look=%+v", err, c.Derive().Def, c.Look())
 	}
 }

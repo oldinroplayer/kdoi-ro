@@ -78,7 +78,7 @@ func (s *Store) Authenticate(name, password string, start game.CharData) (c Char
 	var snapshot Character
 	if ok {
 		snapshot = *existing
-		snapshot.Inventory = append([]game.InvItem(nil), existing.Inventory...)
+		snapshot.CharData = existing.Clone()
 	}
 	s.mu.Unlock()
 
@@ -118,7 +118,7 @@ func (s *Store) Save(name string, data game.CharData) error {
 	if !ok {
 		return fmt.Errorf("unknown character %q", name)
 	}
-	c.CharData = data
+	c.CharData = data.Clone()
 	return s.saveLocked()
 }
 

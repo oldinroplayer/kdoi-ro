@@ -80,8 +80,12 @@ export class InventoryWindow {
   }
 
   private cell(it: InvItem, info: ItemInfo): HTMLElement {
+    // Every item can be dragged onto the ground to drop it; healing items also
+    // onto the hotkey bar.
+    const drag = JSON.stringify({ kind: "item", id: info.id, index: it.index, amount: it.amount, hotkey: info.type === "healing" });
     if (info.slot) {
       return itemCell(info, it.amount, {
+        dragData: drag,
         action: "equip",
         onActivate: () => {
           const c = this.conn();
@@ -96,8 +100,12 @@ export class InventoryWindow {
       });
     }
     if (info.type === "healing") {
-      return itemCell(info, it.amount, { action: "use", onActivate: () => this.conn()?.useItem(it.index) });
+      return itemCell(info, it.amount, {
+        action: "use",
+        onActivate: () => this.conn()?.useItem(it.index),
+        dragData: drag,
+      });
     }
-    return itemCell(info, it.amount);
+    return itemCell(info, it.amount, { dragData: drag });
   }
 }

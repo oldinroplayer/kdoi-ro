@@ -8,7 +8,7 @@ import {
   CharacterSprite,
   loadEquipLayers,
   loadMonsterAssets,
-  loadNoviceAssets,
+  loadPlayerAssets,
   loadNpcAssets,
   MonsterAction,
   PlayerAction,
@@ -17,6 +17,20 @@ import {
 } from "./render/character";
 import { FloatingTexts, NameLabels } from "./render/labels";
 import { CELL, loadMap, roToWorld, worldToRo, type MapView } from "./render/map";
+import { HitRing, loadRingTexture, type Effect } from "./render/effect";
+import {
+  CastCircle,
+  LightColumn,
+  loadStr,
+  castTextures,
+  RisingImage,
+  SpriteEffect,
+  StrEffect,
+  type Anchor,
+} from "./render/skilleffects";
+import { loadEffectAssets, loadItemAssets } from "./render/character";
+import { loadTexture } from "./render/textures";
+import { Skill } from "./skills";
 import { Portal } from "./render/portal";
 
 type EnterMap = Extract<ServerPacket, { type: "enterMap" }>;
@@ -32,6 +46,7 @@ export interface MinimapView {
   portals: [number, number][];
 }
 type Damage = Extract<ServerPacket, { type: "damage" }>;
+type SkillUse = Extract<ServerPacket, { type: "skillUse" }>;
 
 interface Segment {
   fx: number;
@@ -62,12 +77,22 @@ class Unit {
   oneShot: OneShot | null = null;
   /** Players lying knocked out. */
   dead = false;
+  /** Players sitting on the ground (regenerating faster). */
+  sitting = false;
   /** When a monster's death animation started (it's removed afterwards). */
   dyingSince = 0;
   /** Last time this unit hit or was hit; players hold a battle stance for a while. */
   lastCombat = 0;
   /** Visible equipment (players only). */
   look: Look | null = null;
+  /** RO class ID (players only). */
+  job = 0;
+  /** Cast bar while casting a skill. */
+  cast: { el: HTMLElement; start: number; ms: number } | null = null;
+  /** Magic circle under the unit while it casts. */
+  castCircle: CastCircle | null = null;
+  /** What the unit last said, shown over its head for a few seconds. */
+  speech: { el: HTMLElement; until: number } | null = null;
   /** Last animation frame shown, so each frame's sound plays once. */
   lastFrameKey = "";
   readonly bornAt = performance.now();
@@ -77,7 +102,8 @@ class Unit {
     readonly kind: Kind,
     readonly name: string,
     readonly speed: number,
-    readonly sprite: CharacterSprite,
+    /** Replaced when a player changes job. */
+    public sprite: CharacterSprite,
     readonly label: HTMLElement,
     x: number,
     y: number,
@@ -99,6 +125,47 @@ export interface GameHud {
   setDead(dead: boolean): void;
   /** Sprite name of an item shown on characters (from the item database). */
   itemSprite(itemId: number): string | undefined;
+  /** A short notice for the player. */
+  notice(text: string): void;
+  /** A skill's element (for the colour of its magic circle). */
+  skillElement(skillId: number): number;
+  /** The player clicked a chat room's sign. */
+  joinRoom(roomId: number, isPublic: boolean, title: string): void;
+  /** An item's display and resource names, from the item database. */
+  itemInfo(itemId: number): { name: string; resName: string } | undefined;
+}
+
+/** An item lying on the ground. */
+interface FloorItem {
+  id: number;
+  /** Fractional cell position (sub-cell offset included). */
+  x: number;
+  y: number;
+  label: HTMLElement;
+  sprite: CharacterSprite | null; // null until its sprite has loaded
+  /** When it fell (for the drop bounce); 0 if it was already lying there. */
+  droppedAt: number;
+}
+
+/** How long a dropped item takes to bounce to rest (ms). */
+const DROP_MS = 500;
+
+/** A chat room sign over its owner's head. */
+interface RoomSign {
+  el: HTMLElement;
+  ownerId: number;
+  public: boolean;
+  title: string;
+}
+
+/** How long a speech bubble stays up (ms). */
+const SPEECH_MS = 5000;
+
+/** A skill waiting for the player to click its target. */
+interface Targeting {
+  skillId: number;
+  kind: "enemy" | "friend";
+  name: string;
 }
 
 /** How long players stay in battle stance (weapon drawn) after fighting. */
@@ -109,6 +176,8 @@ const DIAGONAL = 1.4;
 const LABEL_DROP = 10;
 /** Sprite pixels from the feet up to where damage numbers appear. */
 const HEAD_HEIGHT = 75;
+/** Sprite pixels from the feet up to the middle of a body (where hits land). */
+const BODY_HEIGHT = 30;
 const PITCH = THREE.MathUtils.degToRad(50);
 
 export class Game {
@@ -122,12 +191,14 @@ export class Game {
   private readonly labels: NameLabels;
   private readonly floats: FloatingTexts;
   private map: MapView | null = null;
-  private playerAssets: CharacterAssets | null = null;
+  /** Player body sprites already loaded, by job. */
+  private readonly playerAssets = new Map<number, CharacterAssets>();
   /** Monster sprites already loaded, by sprite name. */
   private readonly monsterAssets = new Map<string, CharacterAssets>();
   private readonly units = new Map<number, Unit>();
   private readonly npcs = new Map<number, Unit>();
   private portals: Portal[] = [];
+  private effects: Effect[] = [];
   private portalCells: [number, number][] = [];
   /** Bumped on every map change, so late-loading sprites for an old map are dropped. */
   private mapGeneration = 0;
@@ -135,6 +206,10 @@ export class Game {
   private pendingNpc: number | null = null;
   private pendingSince = 0;
   private hovered: Unit | null = null;
+  private targeting: Targeting | null = null;
+  private readonly signs = new Map<number, RoomSign>();
+  private readonly floorItems = new Map<number, FloorItem>();
+  private hoveredItem: FloorItem | null = null;
   /** When each of the map's ambient sounds may play next. */
   private ambientNext: number[] = [];
   private nextAmbientCheck = 0;
@@ -190,8 +265,52 @@ export class Game {
     }
     switch (p.type) {
       case "appear":
-        this.addPlayer(p.id, p.name, p.speed, p.x, p.y, p.dir, p.dead, p.look);
+        void this.addPlayer(p.id, p.name, p.job, p.speed, p.x, p.y, p.dir, p.dead, p.look, p.sitting);
         break;
+      case "skillCast": {
+        const u = this.units.get(p.src);
+        if (!u) break;
+        u.cast?.el.remove();
+        u.cast = null;
+        u.castCircle?.stop();
+        u.castCircle = null;
+        if (p.skillId && p.castMs > 0) {
+          u.cast = { el: this.labels.createBar(), start: performance.now(), ms: p.castMs };
+          void this.playCastCircle(u, this.hud.skillElement(p.skillId), p.castMs);
+          audio.play("effect/ef_beginspell.wav", this.volumeAt(u));
+        }
+        break;
+      }
+      case "skillUse": {
+        const u = this.units.get(p.src);
+        if (!u) break;
+        u.cast?.el.remove();
+        u.cast = null;
+        u.castCircle?.stop();
+        u.castCircle = null;
+        u.lastCombat = performance.now(); // skill users drop into battle stance
+        this.playSkillUse(p);
+        break;
+      }
+      case "turn": {
+        const u = this.units.get(p.id);
+        if (u && !u.walk.length) u.dir = p.dir;
+        break;
+      }
+      case "sit": {
+        const u = this.units.get(p.id);
+        if (u) {
+          u.sitting = p.sitting;
+          u.walk = [];
+          u.oneShot = null;
+        }
+        break;
+      }
+      case "job": {
+        const u = this.units.get(p.id);
+        if (u && u.kind === "player") void this.setJob(u, p.job);
+        break;
+      }
       case "look": {
         const u = this.units.get(p.id);
         if (u) {
@@ -235,10 +354,30 @@ export class Game {
       case "damage":
         this.showDamage(p);
         break;
+      case "roomSign":
+        this.updateSign(p);
+        break;
+      case "floorItem":
+        void this.addFloorItem(p);
+        break;
+      case "floorItemGone":
+        this.removeFloorItem(p.id);
+        break;
+      case "pickUp": {
+        // RO's pick-up motion: a quick crouch.
+        const u = this.units.get(p.id);
+        if (u && !u.dead) u.oneShot = { group: PlayerAction.Sit, start: performance.now(), duration: 300 };
+        break;
+      }
+      case "roomGone":
+        this.signs.get(p.roomId)?.el.remove();
+        this.signs.delete(p.roomId);
+        break;
       case "dead": {
         const u = this.units.get(p.id);
         if (u) {
           u.dead = true;
+          u.sitting = false;
           u.walk = [];
           u.oneShot = null;
         }
@@ -248,7 +387,9 @@ export class Game {
       case "levelUp": {
         const u = this.units.get(p.id);
         if (u) {
-          this.floats.spawn(p.job ? "JOB LEVEL UP" : "LEVEL UP!", p.job ? "level job" : "level", this.headOf(u));
+          const [text, kind] =
+            p.kind === 2 ? ["JOB CHANGE!", "level"] : p.kind === 1 ? ["JOB LEVEL UP", "level job"] : ["LEVEL UP!", "level"];
+          this.floats.spawn(text, kind, this.headOf(u));
           audio.play("levelup.wav", this.volumeAt(u));
         }
         break;
@@ -268,11 +409,15 @@ export class Game {
     this.loading = true;
     this.queue = [];
     this.mapGeneration++;
+    this.cancelTargeting();
+    this.clearSigns(); // the server re-sends the new map's rooms
+    this.clearFloorItems(); // ... and what lies on its ground
     this.pendingNpc = null;
     this.hovered = null;
     for (const id of [...this.units.keys()]) this.removeUnit(id);
     this.clearPortals();
     this.clearNpcs();
+    this.clearEffects();
     this.hud.setDead(false);
     const sameMap = this.map?.name === p.map;
     if (this.map && !sameMap) audio.play("effect/ef_portal.wav"); // warped
@@ -284,9 +429,12 @@ export class Game {
     }
 
     try {
-      const [map, assets] = await Promise.all([
+      // Every job on the map (ours included) needs its body sprite first.
+      const jobs = new Set([p.job]);
+      for (const q of this.queue) if (q.type === "appear") jobs.add(q.job);
+      const [map] = await Promise.all([
         sameMap ? Promise.resolve(this.map!) : loadMap(p.map, (msg) => this.hud.setStatus(msg)),
-        loadNoviceAssets(),
+        ...[...jobs].map((j) => this.jobSprite(j)),
       ]);
       if (this.disposed) {
         if (!sameMap) map.dispose();
@@ -297,10 +445,9 @@ export class Game {
         this.scene.add(map.root);
       }
       this.ambientNext = map.sounds.map(() => 0);
-      this.playerAssets = assets;
       this.selfId = p.selfId;
       // The server doesn't echo our own name in EnterMap; the login screen tells us.
-      this.addPlayer(p.selfId, this.selfName, p.speed, p.x, p.y, p.dir, false, p.look);
+      await this.addPlayer(p.selfId, this.selfName, p.job, p.speed, p.x, p.y, p.dir, false, p.look, false);
 
       // Load every monster sprite the map needs before showing them.
       this.hud.setStatus("Loading monsters…");
@@ -333,19 +480,55 @@ export class Game {
     }
   }
 
-  private addPlayer(id: number, name: string, speed: number, x: number, y: number, dir: number, dead: boolean, look: Look) {
-    if (!this.playerAssets) return;
-    const u = this.addUnit(id, "player", name, speed, this.playerAssets, x, y, dir, id === this.selfId ? "self" : "player");
+  private async jobSprite(job: number): Promise<CharacterAssets> {
+    const cached = this.playerAssets.get(job);
+    if (cached) return cached;
+    const assets = await loadPlayerAssets(job);
+    this.playerAssets.set(job, assets);
+    return assets;
+  }
+
+  private async addPlayer(
+    id: number,
+    name: string,
+    job: number,
+    speed: number,
+    x: number,
+    y: number,
+    dir: number,
+    dead: boolean,
+    look: Look,
+    sitting: boolean,
+  ) {
+    const generation = this.mapGeneration;
+    const assets = this.playerAssets.get(job) ?? (await this.jobSprite(job));
+    if (generation !== this.mapGeneration || this.disposed) return;
+    const u = this.addUnit(id, "player", name, speed, assets, x, y, dir, id === this.selfId ? "self" : "player");
+    u.job = job;
     u.dead = dead;
+    u.sitting = sitting;
     u.look = look;
     this.applyLook(u);
+  }
+
+  /** Swaps a player's body sprite after a job change, keeping everything else. */
+  private async setJob(u: Unit, job: number) {
+    const assets = await this.jobSprite(job);
+    if (this.units.get(u.id) !== u) return;
+    u.job = job;
+    this.scene.remove(u.sprite.object);
+    u.sprite.dispose();
+    u.sprite = new CharacterSprite(assets);
+    this.scene.add(u.sprite.object);
+    u.lastFrameKey = "";
+    this.applyLook(u); // weapons and shields are per job too
   }
 
   /** Loads and applies a player's equipment sprites. */
   private applyLook(u: Unit) {
     if (!u.look) return;
     const look = u.look;
-    void loadEquipLayers(look, (id) => this.hud.itemSprite(id)).then((layers) => {
+    void loadEquipLayers(look, (id) => this.hud.itemSprite(id), u.job).then((layers) => {
       // Skip if the unit left or changed equipment again meanwhile.
       if (this.units.get(u.id) === u && u.look === look) u.sprite.setEquipment(layers);
     });
@@ -368,6 +551,13 @@ export class Game {
       npcs: [...this.npcs.values()].map((n) => [n.x, n.y]),
       portals: this.portalCells,
     };
+  }
+
+  /** Sits down or stands up (RO's Insert key). */
+  toggleSit(): void {
+    const self = this.units.get(this.selfId);
+    if (!self || self.dead || !this.conn.connected) return;
+    this.conn.sit(!self.sitting);
   }
 
   /** Re-applies every player's equipment, e.g. once item data has loaded. */
@@ -407,6 +597,9 @@ export class Game {
     this.scene.remove(u.sprite.object);
     u.sprite.dispose();
     u.label.remove();
+    u.cast?.el.remove();
+    u.castCircle?.stop();
+    u.speech?.el.remove();
     this.units.delete(id);
     if (this.hovered === u) this.hovered = null;
   }
@@ -471,6 +664,10 @@ export class Game {
       this.conn.npcClick(npc.id);
       return;
     }
+    if (self.sitting) {
+      this.hud.notice("You're sitting. Press Insert or the Sit button to stand up.");
+      return;
+    }
     // Nearest walkable cell to us within 2 cells of the NPC.
     let best: [number, number] | null = null;
     let bestDist = Infinity;
@@ -517,26 +714,219 @@ export class Game {
     const target = this.units.get(p.target);
     if (src) src.lastCombat = now;
     if (target) target.lastCombat = now;
+    // Magic (motion 0) is cast, not swung: the caster only turns to face.
+    const magic = p.motion === 0;
     if (src && !src.dead) {
       if (target) src.dir = dirFor(target.x - src.x, target.y - src.y, src.dir);
-      const group = src.kind === "monster" ? MonsterAction.Attack : PlayerAction.Attack;
-      src.oneShot = { group, start: now, duration: Math.max(p.motion, 250) };
+      if (!magic) src.oneShot = { group: this.attackGroup(src), start: now, duration: Math.max(p.motion, 250) };
     }
     if (!target) return;
     if (p.hurt > 0 && !target.dead) {
       const group = target.kind === "monster" ? MonsterAction.Hurt : PlayerAction.Hurt;
       target.oneShot = { group, start: now, duration: Math.max(p.hurt, 200) };
     }
-    // Show the number as the attack lands, partway through the swing.
-    const delay = Math.min(p.motion, 400) / 2;
+    // Show the number as the attack lands, partway through the swing. Damage
+    // split over several blows (bolts, Double Strafe, Double Attack) shows one
+    // number per blow.
+    const hits = Math.max(1, p.hits);
+    const first = magic ? 150 : Math.min(p.motion, 400) / 2;
+    const spacing = magic ? 200 : 150;
+    const each = Math.floor(p.damage / hits);
     const kind = p.miss ? "miss" : p.target === this.selfId ? "hurt" : p.crit ? "crit" : "damage";
-    const text = p.miss ? "Miss" : p.crit ? `${p.damage}!` : String(p.damage);
-    const hitSound = p.miss ? null : this.hitSound(src);
-    setTimeout(() => {
-      if (this.disposed) return;
-      this.floats.spawn(text, kind, this.headOf(target));
-      if (hitSound) audio.play(hitSound, this.volumeAt(target));
-    }, delay);
+    for (let i = 0; i < hits; i++) {
+      const amount = i === hits - 1 ? p.damage - each * (hits - 1) : each;
+      const text = p.miss ? "Miss" : p.crit ? `${amount}!` : String(amount);
+      setTimeout(() => {
+        if (this.disposed) return;
+        this.floats.spawn(text, kind, this.headOf(target));
+        if (!p.miss) this.playHit(p.skillId, i, src, target);
+      }, first + i * spacing);
+    }
+  }
+
+  /** The sound and effect of one blow landing. */
+  private playHit(skillId: number, i: number, src: Unit | undefined, target: Unit) {
+    const n = (i % 3) + 1;
+    const volume = this.volumeAt(target);
+    const bolt = (str: string, sound: string) => {
+      void this.playStr(str, target, BODY_HEIGHT);
+      audio.play(`effect/${sound}${n}.wav`, volume);
+    };
+    switch (skillId) {
+      case Skill.FireBolt:
+        return bolt("firehit1", "ef_firearrow");
+      case Skill.ColdBolt:
+        return bolt("icecrash", "ef_icearrow");
+      case Skill.LightningBolt:
+        return bolt("lightning", "ef_lightbolt");
+      case Skill.Envenom:
+        void this.playStr("invenom", target, BODY_HEIGHT);
+        audio.play("effect/thief_invenom.wav", volume);
+        break;
+      case Skill.Bash:
+        audio.play("effect/ef_bash.wav", volume);
+        break;
+      case Skill.Mammonite:
+        audio.play("effect/ef_coin1.wav", volume);
+        break;
+      default:
+        audio.play(this.hitSound(src), volume);
+    }
+    void this.playHitRing(target);
+  }
+
+  /** Effects shown when a skill goes off (attack skills also show their hits). */
+  private playSkillUse(p: SkillUse) {
+    const src = this.units.get(p.src);
+    const target = this.units.get(p.target) ?? src;
+    if (!src || !target) return;
+    const volume = this.volumeAt(target);
+    switch (p.skillId) {
+      case Skill.MagnumBreak:
+        if (!src.dead) src.oneShot = { group: this.attackGroup(src), start: performance.now(), duration: 400 };
+        void this.playStr("fire", src, 0);
+        audio.play("effect/ef_magnumbreak.wav", this.volumeAt(src));
+        break;
+      case Skill.Heal:
+        this.addEffect(new LightColumn(this.anchorOf(target), 0xa8ffb0));
+        audio.play("_heal_effect.wav", volume);
+        break;
+      case Skill.IncAgi:
+        this.addEffect(new LightColumn(this.anchorOf(target), 0x9cc8ff));
+        void this.playRisingImage("texture/effect/agi_up.bmp", target);
+        audio.play("effect/ef_incagility.wav", volume);
+        break;
+      case Skill.Blessing:
+        void this.playSprite("축복", target);
+        audio.play("effect/ef_blessing.wav", volume);
+        break;
+      case Skill.FirstAid:
+        this.addEffect(new LightColumn(this.anchorOf(target), 0xffffff, 500));
+        break;
+    }
+  }
+
+  /** A unit's feet, raised `px` sprite pixels towards the top of the screen. */
+  private anchorOf(u: Unit, px = 0): Anchor {
+    let last = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    return () => {
+      if (!this.map) return last;
+      last = roToWorld(u.x * CELL, heightAt(this.map.gat, u.x, u.y), u.y * CELL);
+      if (px) last.add(up.set(0, px * SPRITE_SCALE, 0).applyQuaternion(this.camera.quaternion));
+      return last;
+    };
+  }
+
+  private addEffect(e: Effect) {
+    this.effects.push(e);
+    this.scene.add(e.object);
+  }
+
+  /** Runs an effect once its files have loaded, unless the map changed meanwhile. */
+  private async whenLoaded<T>(load: Promise<T>, make: (loaded: T) => Effect) {
+    const generation = this.mapGeneration;
+    try {
+      const loaded = await load;
+      if (this.disposed || generation !== this.mapGeneration) return;
+      this.addEffect(make(loaded));
+    } catch (err) {
+      console.warn("effect failed to load", err);
+    }
+  }
+
+  private playStr(name: string, u: Unit, px: number) {
+    return this.whenLoaded(loadStr(name), (str) => new StrEffect(str, this.anchorOf(u, px)));
+  }
+
+  private playRisingImage(path: string, u: Unit) {
+    return this.whenLoaded(loadTexture(path), (tex) => new RisingImage(tex, this.anchorOf(u, HEAD_HEIGHT)));
+  }
+
+  private playSprite(name: string, u: Unit) {
+    return this.whenLoaded(loadEffectAssets(name), (assets) => new SpriteEffect(assets, this.anchorOf(u, HEAD_HEIGHT + 20)));
+  }
+
+  private playCastCircle(u: Unit, element: number, ms: number) {
+    return this.whenLoaded(castTextures(element), (tex) => {
+      const circle = new CastCircle(tex, this.anchorOf(u), ms);
+      u.castCircle?.stop();
+      u.castCircle = circle;
+      return circle;
+    });
+  }
+
+  /** The live unit of a kind nearest to a cell, within `range` cells. */
+  private nearestUnit(cell: [number, number] | null, kind: Kind, range: number): Unit | null {
+    if (!cell) return null;
+    let best: Unit | null = null;
+    let bestD = range + 1;
+    for (const u of this.units.values()) {
+      if (u.kind !== kind || u.dead || u.dyingSince) continue;
+      const d = chebyshev(Math.floor(u.x), Math.floor(u.y), cell[0], cell[1]);
+      if (d < bestD) {
+        best = u;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /** Waits for a click on the target of an enemy or friend skill. */
+  beginTargeting(skillId: number, kind: "enemy" | "friend", name: string): void {
+    this.targeting = { skillId, kind, name };
+    this.canvas.style.cursor = "crosshair";
+    this.hud.setStatus(`${name}: click ${kind === "enemy" ? "a monster" : "a player (or yourself)"} · Esc to cancel`);
+  }
+
+  /** Stops waiting for a skill target; returns whether one was pending. */
+  cancelTargeting(): boolean {
+    if (!this.targeting) return false;
+    this.targeting = null;
+    this.canvas.style.cursor = "";
+    this.hud.setStatus("");
+    return true;
+  }
+
+  /** Attack animation: swords swing with action 11, daggers and fists with 10. */
+  private attackGroup(u: Unit): number {
+    if (u.kind === "monster") return MonsterAction.Attack;
+    const weapon = u.look?.weapon ?? 0;
+    return weapon >= 1100 && weapon < 1200 ? PlayerAction.AttackSword : PlayerAction.Attack;
+  }
+
+  /** RO's white shockwave ring on a unit that was just hit. */
+  private async playHitRing(u: Unit) {
+    const generation = this.mapGeneration;
+    const texture = await loadRingTexture();
+    if (this.disposed || generation !== this.mapGeneration || !this.map) return;
+    const map = this.map;
+    const up = new THREE.Vector3();
+    const effect = new HitRing(texture, () => {
+      // Centred on the body (a little above the feet), pulled towards the camera.
+      const feet = roToWorld(u.x * CELL, heightAt(map.gat, u.x, u.y), u.y * CELL);
+      up.set(0, BODY_HEIGHT * SPRITE_SCALE, 0).applyQuaternion(this.camera.quaternion);
+      return feet.add(up).add(this.camera.position.clone().sub(feet).normalize().multiplyScalar(10));
+    });
+    this.effects.push(effect);
+    this.scene.add(effect.object);
+  }
+
+  private updateEffects(now: number) {
+    this.effects = this.effects.filter((e) => {
+      if (e.update(now, this.camera)) return true;
+      this.scene.remove(e.object);
+      e.dispose();
+      return false;
+    });
+  }
+
+  private clearEffects() {
+    for (const e of this.effects) {
+      this.scene.remove(e.object);
+      e.dispose();
+    }
+    this.effects = [];
   }
 
   /** The impact sound for a hit, by attacker: weapon type for players, fists for monsters. */
@@ -544,6 +934,7 @@ export class Game {
     const n = 1 + Math.floor(Math.random() * 4);
     if (!src || src.kind === "monster") return `_hit_fist${n}.wav`;
     const weapon = src.look?.weapon ?? 0;
+    if (weapon >= 1700 && weapon < 1800) return "_hit_arrow.wav";
     if (weapon >= 1100 && weapon < 1200) return "_hit_sword.wav";
     if (weapon >= 1200 && weapon < 1300) return "_hit_dagger.wav";
     return `_enemy_hit_normal${n}.wav`; // bare hands
@@ -630,6 +1021,18 @@ export class Game {
       u.dir = dirFor(s.tx - s.fx, s.ty - s.fy, u.dir);
     }
 
+    if (u.cast) {
+      const k = (now - u.cast.start) / u.cast.ms;
+      if (k >= 1) {
+        u.cast.el.remove();
+        u.cast = null;
+      } else {
+        (u.cast.el.firstElementChild as HTMLElement).style.width = `${k * 100}%`;
+        const feet = roToWorld(u.x * CELL, heightAt(this.map!.gat, u.x, u.y), u.y * CELL);
+        const below = new THREE.Vector3(0, -(LABEL_DROP + 14) * SPRITE_SCALE, 0).applyQuaternion(this.camera.quaternion);
+        this.labels.place(u.cast.el, below.add(feet), this.camera);
+      }
+    }
     const [group, frame] = this.animationFrame(u, now);
     const dir = this.spriteDir(u.dir);
     u.sprite.draw(group, dir, frame);
@@ -644,6 +1047,130 @@ export class Game {
       }
     }
     this.placeSprite(u.sprite, u.label, u.x, u.y);
+    if (u.speech) {
+      if (now > u.speech.until) {
+        u.speech.el.remove();
+        u.speech = null;
+      } else {
+        this.labels.placeAbove(u.speech.el, this.headOf(u)(), this.camera);
+      }
+    }
+  }
+
+  /** Shows what a unit said in a bubble over its head. */
+  showSpeech(id: number, text: string): void {
+    const u = this.units.get(id);
+    if (!u || !this.map) return;
+    u.speech?.el.remove();
+    u.speech = { el: this.labels.createSpeech(text), until: performance.now() + SPEECH_MS };
+  }
+
+  private updateSign(p: Extract<ServerPacket, { type: "roomSign" }>) {
+    let sign = this.signs.get(p.roomId);
+    if (!sign) {
+      const roomId = p.roomId;
+      const el = this.labels.createSign(() => {
+        const s = this.signs.get(roomId);
+        if (s && s.ownerId !== this.selfId) this.hud.joinRoom(roomId, s.public, s.title);
+      });
+      sign = { el, ownerId: p.ownerId, public: p.public, title: p.title };
+      this.signs.set(p.roomId, sign);
+    }
+    Object.assign(sign, { ownerId: p.ownerId, public: p.public, title: p.title });
+    sign.el.textContent = `${p.public ? "" : "🔒 "}${p.title} (${p.members}/${p.limit})`;
+    sign.el.title = p.public ? "Click to join" : "Private room: click to enter the password";
+  }
+
+  private async addFloorItem(p: Extract<ServerPacket, { type: "floorItem" }>) {
+    this.removeFloorItem(p.id);
+    const info = this.hud.itemInfo(p.itemId);
+    const name = (info?.name ?? `Item ${p.itemId}`) + (p.amount > 1 ? ` × ${p.amount}` : "");
+    const label = this.labels.create(name, "item");
+    label.style.visibility = "hidden"; // shown on hover, as in RO
+    const item: FloorItem = {
+      id: p.id,
+      x: p.x + p.subX / 16,
+      y: p.y + p.subY / 16,
+      label,
+      sprite: null,
+      droppedAt: p.dropped ? performance.now() : 0,
+    };
+    this.floorItems.set(p.id, item);
+    if (!info?.resName) return;
+    const generation = this.mapGeneration;
+    try {
+      const assets = await loadItemAssets(info.resName);
+      if (this.disposed || generation !== this.mapGeneration || this.floorItems.get(p.id) !== item) return;
+      item.sprite = new CharacterSprite(assets);
+      item.sprite.draw(0, 0, 0);
+      item.sprite.object.renderOrder = 1;
+      this.scene.add(item.sprite.object);
+    } catch (err) {
+      console.warn("item sprite failed", info.resName, err);
+    }
+  }
+
+  private removeFloorItem(id: number) {
+    const item = this.floorItems.get(id);
+    if (!item) return;
+    if (item.sprite) {
+      this.scene.remove(item.sprite.object);
+      item.sprite.dispose();
+    }
+    item.label.remove();
+    if (this.hoveredItem === item) this.hoveredItem = null;
+    this.floorItems.delete(id);
+  }
+
+  private clearFloorItems() {
+    for (const id of [...this.floorItems.keys()]) this.removeFloorItem(id);
+  }
+
+  /** Positions floor items, bouncing fresh drops up and down onto the ground. */
+  private placeFloorItems(now: number) {
+    const up = new THREE.Vector3();
+    for (const item of this.floorItems.values()) {
+      if (!item.sprite) {
+        item.label.hidden = true;
+        continue;
+      }
+      this.placeSprite(item.sprite, item.label, item.x, item.y);
+      const t = item.droppedAt ? (now - item.droppedAt) / DROP_MS : 1;
+      if (t < 1) {
+        const lift = Math.sin(Math.PI * t) * 24 * (1 - t * 0.5); // sprite pixels
+        item.sprite.object.position.add(up.set(0, lift * SPRITE_SCALE, 0).applyQuaternion(this.camera.quaternion));
+      }
+      item.label.style.visibility = this.hoveredItem === item ? "" : "hidden";
+    }
+  }
+
+  /** The floor item whose visible pixels are under the mouse. */
+  private pickFloorItem(ev: MouseEvent): FloorItem | null {
+    const byObject = new Map<THREE.Object3D, FloorItem>();
+    for (const item of this.floorItems.values()) if (item.sprite) byObject.set(item.sprite.object, item);
+    if (byObject.size === 0) return null;
+    this.ray(ev);
+    for (const hit of this.raycaster.intersectObjects([...byObject.keys()], false)) {
+      const item = byObject.get(hit.object);
+      if (item?.sprite && hit.uv && item.sprite.hitTest(hit.uv)) return item;
+    }
+    return null;
+  }
+
+  private placeSigns() {
+    for (const sign of this.signs.values()) {
+      const owner = this.units.get(sign.ownerId);
+      if (!owner || !this.map) {
+        sign.el.hidden = true;
+        continue;
+      }
+      this.labels.placeAbove(sign.el, this.headOf(owner)(), this.camera);
+    }
+  }
+
+  private clearSigns() {
+    for (const sign of this.signs.values()) sign.el.remove();
+    this.signs.clear();
   }
 
   /** Which action group and frame a unit shows right now. */
@@ -656,6 +1183,9 @@ export class Game {
     }
     if (u.dead) {
       return [PlayerAction.Dead, s.frameCount(PlayerAction.Dead) - 1];
+    }
+    if (u.sitting) {
+      return [PlayerAction.Sit, 0]; // frame 0: head facing forward
     }
     if (u.walk.length) {
       const group = monster ? MonsterAction.Walk : PlayerAction.Walk;
@@ -724,8 +1254,11 @@ export class Game {
         n.sprite.draw(PlayerAction.Idle, this.spriteDir(n.dir), 0);
         this.placeSprite(n.sprite, n.label, n.x, n.y);
       }
+      this.placeSigns();
+      this.placeFloorItems(now);
       this.updatePendingNpc();
       this.updateAmbient(now);
+      this.updateEffects(now);
       this.floats.update(this.camera, now);
     }
     this.renderer.render(this.scene, this.camera);
@@ -751,9 +1284,13 @@ export class Game {
 
   /** The NPC or live monster whose visible pixels are under the mouse, nearest first. */
   private pickUnit(ev: MouseEvent): Unit | null {
+    // Players are only clickable while choosing a friend skill's target.
+    const friend = this.targeting?.kind === "friend";
     const candidates = [
       ...this.npcs.values(),
-      ...[...this.units.values()].filter((u) => u.kind === "monster" && !u.dyingSince),
+      ...[...this.units.values()].filter(
+        (u) => (u.kind === "monster" && !u.dyingSince) || (friend && u.kind === "player" && !u.dead),
+      ),
     ];
     if (candidates.length === 0) return null;
     this.ray(ev);
@@ -770,7 +1307,7 @@ export class Game {
     this.hovered?.label.classList.remove("hover");
     this.hovered = u;
     u?.label.classList.add("hover");
-    this.canvas.style.cursor = !u ? "" : u.kind === "monster" ? "crosshair" : "pointer";
+    this.canvas.style.cursor = this.targeting || u?.kind === "monster" ? "crosshair" : u ? "pointer" : "";
   }
 
   private updateCursor(cell: [number, number] | null) {
@@ -803,6 +1340,7 @@ export class Game {
     on(this.canvas, "contextmenu", (ev) => ev.preventDefault());
     on(this.canvas, "mousedown", (ev) => {
       if (ev.button === 2) {
+        if (this.cancelTargeting()) return;
         rotating = true;
         lastX = ev.clientX;
         return;
@@ -811,6 +1349,29 @@ export class Game {
       const self = this.units.get(this.selfId);
       if (!self || self.dead) return;
       const u = this.pickUnit(ev);
+      if (this.targeting) {
+        const t = this.targeting;
+        const want = t.kind === "enemy" ? "monster" : "player";
+        // A near miss on a small or moving target still counts.
+        const picked = u?.kind === want ? u : this.nearestUnit(this.pick(ev), want, 2);
+        this.cancelTargeting();
+        if (picked) {
+          this.pendingNpc = null;
+          this.conn.useSkill(t.skillId, 0, picked.id);
+        } else {
+          this.hud.notice(`${t.name} needs ${t.kind === "enemy" ? "a monster" : "a player"} as its target.`);
+        }
+        return;
+      }
+      if (self.sitting && u?.kind !== "npc") {
+        // Seated: turn to face where we clicked instead of walking or attacking.
+        const at = u ? [u.x, u.y] : this.pick(ev)?.map((c) => c + 0.5);
+        if (at) {
+          const dir = dirFor(at[0] - self.x, at[1] - self.y, self.dir);
+          if (dir !== self.dir) this.conn.turn(dir);
+        }
+        return;
+      }
       if (u?.kind === "npc") {
         this.talkTo(u);
         return;
@@ -818,6 +1379,11 @@ export class Game {
       this.pendingNpc = null;
       if (u?.kind === "monster") {
         this.conn.attack(u.id);
+        return;
+      }
+      const item = this.pickFloorItem(ev);
+      if (item) {
+        this.conn.pickUp(item.id); // the server walks us over first
         return;
       }
       const cell = this.pick(ev);
@@ -831,7 +1397,10 @@ export class Game {
       }
       const u = rotating ? null : this.pickUnit(ev);
       this.setHovered(u);
-      this.updateCursor(u ? null : this.pick(ev));
+      this.hoveredItem = u || rotating ? null : this.pickFloorItem(ev);
+      this.canvas.style.cursor =
+        this.targeting || u?.kind === "monster" ? "crosshair" : u || this.hoveredItem ? "pointer" : "";
+      this.updateCursor(u || this.hoveredItem ? null : this.pick(ev));
     });
     on(this.canvas, "mouseleave", () => {
       this.updateCursor(null);
@@ -861,8 +1430,11 @@ export class Game {
     cancelAnimationFrame(this.frame);
     for (const f of this.cleanup) f();
     for (const id of [...this.units.keys()]) this.removeUnit(id);
+    this.clearSigns();
+    this.clearFloorItems();
     this.clearPortals();
     this.clearNpcs();
+    this.clearEffects();
     if (this.map) {
       this.scene.remove(this.map.root);
       this.map.dispose();

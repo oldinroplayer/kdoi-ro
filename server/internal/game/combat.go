@@ -27,6 +27,12 @@ func hitChance(hit, flee int) int {
 
 // AttackMob resolves a player's melee attack on a monster.
 func (c *CharData) AttackMob(m *MobDef, r Rand) Hit {
+	return c.attackMob(m, r, 100, 0, 0)
+}
+
+// attackMob is a physical hit scaled to pct% plus flat damage, with hitBonus
+// added to the hit chance (skills like Bash are more accurate).
+func (c *CharData) attackMob(m *MobDef, r Rand, pct, flat, hitBonus int) Hit {
 	d := c.Derive()
 	if m.Plant {
 		return Hit{Damage: 1}
@@ -35,13 +41,13 @@ func (c *CharData) AttackMob(m *MobDef, r Rand) Hit {
 	// Critical hits skip the flee check and DEF, and roll maximum weapon damage.
 	critChance := max(d.Crit-m.Stats[LUK]/5, 0) // percent
 	crit := r.IntN(100) < critChance
-	if !crit && r.IntN(100) >= hitChance(d.Hit, m.Level+m.Stats[AGI]) {
+	if !crit && r.IntN(100) >= min(hitChance(d.Hit, m.Level+m.Stats[AGI])+hitBonus, 100) {
 		return Hit{Miss: true}
 	}
 
 	// Weapon damage rolls between a DEX-based minimum and the weapon's ATK.
 	weapon := d.Atk2
-	weaponMin := min(c.Stats[DEX], weapon)
+	weaponMin := min(c.EffectiveStats()[DEX], weapon)
 	dmg := d.Atk
 	if crit {
 		dmg += weapon
@@ -50,6 +56,7 @@ func (c *CharData) AttackMob(m *MobDef, r Rand) Hit {
 		// Hard DEF reduces by percentage, then VIT soft DEF subtracts.
 		dmg = dmg*(100-min(m.Def, 99))/100 - m.Stats[VIT]
 	}
+	dmg = dmg*pct/100 + flat
 	return Hit{Damage: max(dmg, 1), Crit: crit}
 }
 
@@ -75,10 +82,10 @@ func (c *CharData) AttackMotion() int { return (200 - c.Derive().Aspd) * 10 }
 // (every 6 s for HP and 8 s for SP, standing).
 func (c *CharData) RegenHP() int {
 	d := c.Derive()
-	return max(1, d.MaxHP/200) + c.Stats[VIT]/5
+	return max(1, d.MaxHP/200) + c.EffectiveStats()[VIT]/5 + c.skillRegenHP(d.MaxHP)
 }
 
 func (c *CharData) RegenSP() int {
 	d := c.Derive()
-	return 1 + d.MaxSP/100 + c.Stats[INT]/6
+	return 1 + d.MaxSP/100 + c.EffectiveStats()[INT]/6 + c.skillRegenSP(d.MaxSP)
 }

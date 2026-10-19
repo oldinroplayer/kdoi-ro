@@ -12,11 +12,15 @@ import (
 func (w *World) ClickNpc(id, npcID uint32) error {
 	return w.do(func() {
 		p, n := w.players[id], w.npcs[npcID]
-		if p == nil || p.dead {
+		if p == nil || p.dead || p.room != nil {
 			return
 		}
 		if n == nil || n.Map != p.m.name || chebyshev(p.x, p.y, n.X, n.Y) > NpcRange {
 			p.out.Send(proto.Message("You are too far away."))
+			return
+		}
+		if n.Kind == KindJobChange {
+			w.jobGuideTalk(p, n)
 			return
 		}
 		if len(n.Shop) == 0 {
@@ -24,9 +28,9 @@ func (w *World) ClickNpc(id, npcID uint32) error {
 		}
 		items := make([]proto.ShopItem, len(n.Shop))
 		for i, itemID := range n.Shop {
-			items[i] = proto.ShopItem{ItemID: itemID, Price: game.Items[itemID].Price}
+			items[i] = proto.ShopItem{ItemID: itemID, Price: p.data.BuyPrice(game.Items[itemID].Price)}
 		}
-		p.out.Send(proto.ShopOpen(n.ID, n.Name, items))
+		p.out.Send(proto.ShopOpen(n.ID, n.Name, items, p.data.SellRate()))
 	})
 }
 
@@ -61,7 +65,7 @@ func (w *World) Buy(id, npcID uint32, lines []proto.ShopLine) error {
 		err := p.data.Buy(order, func(itemID int) (int, bool) {
 			for _, sold := range n.Shop {
 				if sold == itemID {
-					return game.Items[itemID].Price, true
+					return p.data.BuyPrice(game.Items[itemID].Price), true
 				}
 			}
 			return 0, false
@@ -83,7 +87,7 @@ func (w *World) Buy(id, npcID uint32, lines []proto.ShopLine) error {
 	})
 }
 
-// Sell sells inventory items to any shop NPC at half their price.
+// Sell sells inventory items to any shop NPC at half their price (more with Overcharge).
 func (w *World) Sell(id, npcID uint32, lines []proto.SellLine) error {
 	return w.do(func() {
 		p, _ := w.shopPlayer(id, npcID)
@@ -163,6 +167,14 @@ func messageFor(err error) string {
 		return "Your level is too low to equip that."
 	case errors.Is(err, game.ErrNotEquippable):
 		return "That item can't be equipped."
+	case errors.Is(err, game.ErrEquipped):
+		return "Take it off first."
+	case errors.Is(err, game.ErrOverweight):
+		return "you're carrying too much"
+	case errors.Is(err, game.ErrInventoryFull):
+		return "your inventory is full"
+	case errors.Is(err, game.ErrWrongJob):
+		return "Your job can't use that."
 	case errors.Is(err, game.ErrNotUsable):
 		return "That item can't be used."
 	case errors.Is(err, game.ErrNotEnoughPoint):
@@ -196,6 +208,7 @@ func (w *World) sendStatus(p *Player) {
 		Weight: d.Weight, MaxWeight: d.MaxWeight,
 		BaseExp: c.BaseExp, BaseNext: c.BaseNext(),
 		JobExp: c.JobExp, JobNext: c.JobNext(),
+		Job: c.Job, Bonus: d.Bonus,
 	}
 	for i, v := range c.Stats {
 		info.RaiseCosts[i] = game.RaiseCost(v)
