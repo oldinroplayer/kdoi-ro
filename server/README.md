@@ -8,6 +8,19 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
 - Walking is server-authoritative: the client asks for a destination, the server
   finds an 8-direction path on the map's `.gat` walk grid and broadcasts it.
 - Warps move players between maps (Morroc's north gate ↔ moc_fild07).
+- Five more cities from the 2004 data — Prontera, Izlude, Geffen, Payon and
+  Alberta — each with every land exit it had (Prontera: castle north, fields
+  south/west/east; Geffen: north/east/west; Payon: Archer Village north, forest
+  south, east field, guild grounds west; Izlude and Alberta: one field each),
+  their 2004 monsters and outdoor shops. Kafra Employees save your respawn point
+  and teleport between cities for zeny (2004 destinations and prices).
+- Each town's 2004 Weapon, Armor and Tool Dealers (indoors in RO, where
+  KDoiRo doesn't go) sell their full stock: beside the Warper in the new cities,
+  and through Morroc's dealers near the spawn. Arrows and Tool Dealer items
+  that don't heal HP yet (wings, SP potions) are left out.
+- A Warper stands at the centre of every town (Morroc included) and sends you
+  to any other town's Warper for free. Positions are in `WARPERS` in
+  `tools/gen_world.py`.
 - NPC shops near the Morroc spawn (weapons, armor, potions); new characters
   start with 2,000 zeny.
 - Inventory, equipment (RO's 10 equip slots) and stats: STR/AGI/VIT/INT/DEX/LUK
@@ -20,6 +33,16 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
   inventory items on the ground for anyone to take.
   Monsters with the Assist flag (Andre, Deniro, Piere, PecoPeco, Condor) join in
   when one of their kind within 10 cells is attacked.
+- Appearance: male or female, and the 2004 client's 19 hairstyles in 9
+  colours. New characters (and ones from before hairstyles) have none chosen,
+  so the client asks on their first login; it can be changed any time from the
+  menu. Stored in the `hair`, `hair_color` and `female` columns (schema
+  version 3); characters from before genders are male.
+- Maps sleep while no player is on them: their monsters stop thinking,
+  wandering and fighting until someone arrives, and stay frozen where they
+  were. A map stays awake for a minute after its last player leaves, so warping
+  out and back finds it unchanged. Respawn timers and floor item expiry keep
+  running. (`internal/world/activity.go`)
 - Combat: click to auto-attack at your ASPD; hit/flee, crits, DEF and VIT
   reduce damage. HP/SP regenerate; Red Potions and herbs heal. At 0 HP you're
   knocked out and can return to the save point (Morroc) with half HP.
@@ -51,7 +74,12 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
 - Sitting doubles HP/SP regeneration (every 3 s / 4 s instead of 6 s / 8 s);
   sitting players can't walk, attack or use skills until they stand up, but can
   turn to face where they click.
-- The last position (map and cell) is saved on logout.
+- Characters live in a SQLite database (`data/kdoiro.db`, pure-Go driver, no
+  cgo): a `characters` table plus `inventory` and `skills` tables, written in one
+  transaction on logout. The schema is versioned with `PRAGMA user_version`;
+  add a migration to `migrations` in `internal/account/store.go` to change it.
+  On first start an existing `data/characters.json` (the old store) is imported
+  into the empty database, passwords included; the JSON file is left as is.
 
 ## Run
 
@@ -68,7 +96,10 @@ Flags:
 | `-addr` | `:7000` | listen address; WebSocket at `/ws`, health check at `/healthz` |
 | `-data` | `../ro-client/data` | directory with `<map>.gat` files |
 | `-maps` | `morocc,moc_fild07,moc_fild06` | maps to load |
-| `-db` | `data/characters.json` | character file (created on first login) |
+| `-db` | `data/kdoiro.db` | SQLite character database (created if missing) |
+| `-import-json` | `data/characters.json` | old JSON store to import into an empty database (ignored if missing) |
+| `-web` | (none) | built web client to serve at `/`, with `-data` served at `/data` (looked up case-insensitively) and `-bgm` at `/bgm`; empty = game API only (development uses Vite) |
+| `-bgm` | (none) | music folder served at `/bgm` when `-web` is set |
 | `-origins` | `localhost:*,127.0.0.1:*` | browser origins allowed to connect |
 
 ```bash
@@ -109,6 +140,7 @@ Coordinates are map cells, `y = 0` at the south edge.
 | `0x0018` | RoomOwner | `name str` — hand the room to another member (owner only) |
 | `0x0019` | PickUp | `floorItemId u32` — walk over and pick up an item on the ground |
 | `0x001A` | DropItem | `index u16`, `amount u16` — drop inventory items at your feet |
+| `0x001B` | SetAppearance | `style u8` (1–19), `color u8` (0–8), `female u8` — change hairstyle, hair colour and gender; everyone on the map gets a PlayerLook |
 | `0x000F` | UseSkill | `skillId u16`, `level u16` (0 = highest learned), `targetId u32` (ignored for self skills) |
 | `0x000D` | Turn | `dir u8` — face a direction without moving (0 N, 1 NW … 7 NE); ignored while walking |
 
@@ -121,8 +153,8 @@ unreachable within 32 steps.
 | Op | Name | Fields |
 |---|---|---|
 | `0x8001` | LoginResult | `code u8` |
-| `0x8002` | EnterMap | `selfId u32`, `map str`, `x u16`, `y u16`, `dir u8`, `job u16`, `speed u16`, then the look (5 × `u16`, as in PlayerAppear) |
-| `0x8003` | PlayerAppear | `id u32`, `name str`, `job u16`, `x u16`, `y u16`, `dir u8`, `speed u16`, `dead u8`, then the look: item IDs (0 = none) of `weapon u16`, `shield u16`, `headTop u16`, `headMid u16`, `headLow u16`, then `sitting u8` |
+| `0x8002` | EnterMap | `selfId u32`, `map str`, `x u16`, `y u16`, `dir u8`, `job u16`, `speed u16`, then the look (8 × `u16`, as in PlayerAppear) |
+| `0x8003` | PlayerAppear | `id u32`, `name str`, `job u16`, `x u16`, `y u16`, `dir u8`, `speed u16`, `dead u8`, then the look: item IDs (0 = none) of `weapon u16`, `shield u16`, `headTop u16`, `headMid u16`, `headLow u16`, then `hair u16` (1–19, 0 = not chosen yet), `hairColor u16` (0–8) and `female u16` (1 = female), then `sitting u8` |
 | `0x8004` | PlayerDisappear | `id u32`, `reason u8` (0 left, 1 died) — any unit, player or monster |
 | `0x8005` | PlayerMove | `id u32`, `fromX u16`, `fromY u16`, `count u16`, then `count` × (`x u16`, `y u16`) — any unit |
 | `0x8006` | PlayerStop | `id u32`, `x u16`, `y u16` — a unit stopped walking here (e.g. reached attack range) |
@@ -138,7 +170,7 @@ unreachable within 32 steps.
 | `0x8010` | UnitDead | `id u32` — a player was knocked out (monsters use PlayerDisappear reason 1) |
 | `0x8011` | LevelUp | `id u32`, `kind u8` (0 base level, 1 job level, 2 job change) |
 | `0x8012` | Heal | `id u32`, `amount u16` |
-| `0x8013` | PlayerLook | `id u32`, then the look (5 × `u16`) — visible equipment changed |
+| `0x8013` | PlayerLook | `id u32`, then the look (8 × `u16`) — visible equipment, hair or gender changed |
 | `0x8014` | PlayerSit | `id u32`, `sitting u8` |
 | `0x8015` | PlayerTurn | `id u32`, `dir u8` |
 | `0x8016` | SkillList | `skillPoints u16`, `count u16`, then `count` × (`skillId u16`, `level u8`) — your whole tree, 0 = not learned |

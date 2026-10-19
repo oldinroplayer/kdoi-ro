@@ -80,6 +80,7 @@ type Player struct {
 	pending     *cast     // skill waiting for the player to walk into range
 	room        *chatRoom // chat room the player is in (can't walk or fight)
 	pickup      uint32    // floor item the player is walking over to pick up
+	dialogMenu  int       // which menu of the NPC's dialog the player is in
 	buffEnds    map[int]time.Time
 	dialog      uint32    // NPC whose question the player is answering
 	nextSkill   time.Time // after-cast delay: no skills before this
@@ -99,6 +100,11 @@ type mapInstance struct {
 	items    map[uint32]*floorItem
 	warps    []Warp
 	npcs     []*NPC
+
+	// Sleeping (see activity.go): asleep is set once the map has gone quiet;
+	// sleepAt ends the grace period after its last player left.
+	asleep  bool
+	sleepAt time.Time
 }
 
 // Warp moves a player who steps within SpanX/SpanY cells of (X, Y) on Map
@@ -123,8 +129,10 @@ type NPC struct {
 	Map    string
 	X, Y   int
 	Dir    uint8
-	Shop   []int  // item IDs, sold at their database price
-	Kind   string // KindShop (default) or KindJobChange
+	Shop   []int      // item IDs, sold at their database price
+	Kind   string     // KindShop (default), KindJobChange, KindKafra or KindWarper
+	Kafra  *Kafra     // for KindKafra
+	Warps  []Teleport // for KindWarper
 }
 
 type World struct {
@@ -260,9 +268,7 @@ func (w *World) tick(now time.Time) {
 	for _, p := range w.players {
 		w.tickPlayer(p, now)
 	}
-	for _, mob := range w.monsters {
-		w.tickMonster(mob, now)
-	}
+	w.tickMaps(now)
 	w.tickRespawns(now)
 	w.tickFloorItems(now)
 }
@@ -352,12 +358,15 @@ func (p *Player) appearPacket() []byte {
 
 func (p *Player) look() proto.Look {
 	l := p.data.Look()
-	return proto.Look{l.Weapon, l.Shield, l.HeadTop, l.HeadMid, l.HeadLow}
+	return proto.Look{l.Weapon, l.Shield, l.HeadTop, l.HeadMid, l.HeadLow, l.Hair, l.HairColor, boolInt(l.Female)}
 }
 
 // removeFromMap takes p off its map and stops anything fighting it.
 func (w *World) removeFromMap(p *Player) {
 	delete(p.m.players, p.id)
+	if len(p.m.players) == 0 {
+		p.m.emptied(time.Now())
+	}
 	w.broadcast(p.m, proto.PlayerDisappear(p.id, proto.GoneOut))
 	p.target = 0
 	p.path = nil
@@ -415,7 +424,8 @@ func (w *World) Leave(id uint32) (data game.CharData, ok bool) {
 		data = p.data.Clone()
 		data.Map, data.X, data.Y = p.m.name, p.x, p.y
 		if p.dead {
-			data.Map, data.X, data.Y = w.savePoint.Map, w.savePoint.X, w.savePoint.Y
+			save := w.savePointOf(&data)
+			data.Map, data.X, data.Y = save.Map, save.X, save.Y
 			reviveVitals(&data)
 		}
 		ok = true
@@ -476,4 +486,11 @@ func abs(v int) int {
 		return -v
 	}
 	return v
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

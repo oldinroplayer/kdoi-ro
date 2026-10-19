@@ -31,6 +31,12 @@ export class PlayerState {
   shop: ShopState | null = null;
   /** Running buffs by skill ID. */
   buffs = new Map<number, Buff>();
+  /** Our unit ID on the current map. */
+  selfId = 0;
+  /** Our hairstyle (0 = not chosen yet) and hair colour. */
+  hair = 0;
+  hairColor = 0;
+  female = false;
   private readonly listeners = new Set<Listener>();
 
   subscribe(fn: Listener): () => void {
@@ -50,6 +56,9 @@ export class PlayerState {
     this.skillPoints = 0;
     this.shop = null;
     this.buffs = new Map();
+    this.selfId = 0;
+    this.hair = this.hairColor = 0;
+    this.female = false;
     this.changed();
   }
 

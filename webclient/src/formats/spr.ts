@@ -12,7 +12,8 @@ export interface Spr {
   rgba: SprImage[];
 }
 
-export function parseSpr(buf: ArrayBuffer): Spr {
+/** palette replaces the file's own (a 1024-byte RGBA .pal, e.g. a hair colour). */
+export function parseSpr(buf: ArrayBuffer, palette?: Uint8Array): Spr {
   const r = new Reader(buf);
   r.magic("SP");
   const v = r.version();
@@ -65,7 +66,7 @@ export function parseSpr(buf: ArrayBuffer): Spr {
   }
 
   // Palette: last 1024 bytes, RGBA with unused alpha; index 0 is transparent.
-  const pal = new Uint8Array(buf, buf.byteLength - 1024, 1024);
+  const pal = palette && palette.length >= 1024 ? palette : new Uint8Array(buf, buf.byteLength - 1024, 1024);
   const indexed = raw.map(({ w, h, px }) => {
     const out = new Uint8ClampedArray(w * h * 4);
     for (let i = 0; i < px.length; i++) {

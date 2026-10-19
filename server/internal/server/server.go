@@ -202,6 +202,8 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 			err = s.world.GiveRoom(id, p.Name)
 		case *proto.PickUp:
 			err = s.world.PickUp(id, p.ItemID)
+		case *proto.SetAppearance:
+			err = s.world.SetAppearance(id, int(p.Style), int(p.Color), p.Female)
 		case *proto.DropItem:
 			err = s.world.DropItem(id, int(p.Index), int(p.Amount))
 		default:

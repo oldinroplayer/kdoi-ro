@@ -47,6 +47,13 @@ type InvItem struct {
 
 // CharData is everything about a character that persists and that the world
 // mutates while the player is online.
+// SavePoint is where a character respawns (set at a Kafra); empty = the default.
+type SavePoint struct {
+	Map string `json:"map"`
+	X   int    `json:"x"`
+	Y   int    `json:"y"`
+}
+
 type CharData struct {
 	Job          uint16        `json:"job"`
 	Map          string        `json:"map"`
@@ -66,7 +73,14 @@ type CharData struct {
 	Buffs       map[int]int `json:"-"`
 	SkillPoints int         `json:"skill_points"`
 	Zeny        int         `json:"zeny"`
-	Inventory   []InvItem   `json:"inventory"`
+	Save        SavePoint   `json:"save,omitempty"`
+	// Hair is the hairstyle (1..HairStyles; 0 = not chosen yet, drawn as the
+	// default) and HairColor its palette (0..HairColors-1).
+	Hair      int `json:"hair,omitempty"`
+	HairColor int `json:"hair_color,omitempty"`
+	// Female picks the female sprites (characters from before genders are male).
+	Female    bool      `json:"female,omitempty"`
+	Inventory []InvItem `json:"inventory"`
 }
 
 // Clone returns a copy that shares no slices or maps with c.
@@ -468,11 +482,31 @@ func (c *CharData) Derive() Derived {
 type Look struct {
 	Weapon, Shield            int
 	HeadTop, HeadMid, HeadLow int
+	Hair, HairColor           int
+	Female                    bool
 }
 
-// Look returns the worn items that show on the character sprite.
+// The 2004 client's hairstyles (sprite/인간족/머리통/남|여/1..19_남|여) and
+// their hair colours (palette/머리/머리<style>_남|여_0..8.pal), for either gender.
+const (
+	HairStyles = 19
+	HairColors = 9
+)
+
+var ErrBadHair = errors.New("no such hairstyle or colour")
+
+// SetAppearance changes the hairstyle, hair colour and gender.
+func (c *CharData) SetAppearance(style, color int, female bool) error {
+	if style < 1 || style > HairStyles || color < 0 || color >= HairColors {
+		return ErrBadHair
+	}
+	c.Hair, c.HairColor, c.Female = style, color, female
+	return nil
+}
+
+// Look returns what shows on the character sprite: worn items and hair.
 func (c *CharData) Look() Look {
-	var l Look
+	l := Look{Hair: c.Hair, HairColor: c.HairColor, Female: c.Female}
 	for _, it := range c.Inventory {
 		switch {
 		case it.Equip&SlotHandR != 0:

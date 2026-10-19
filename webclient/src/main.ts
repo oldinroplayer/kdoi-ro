@@ -11,7 +11,9 @@ import { InventoryWindow } from "./ui/inventory";
 import { Hotbar } from "./ui/hotbar";
 import { DialogWindow } from "./ui/dialog";
 import { BuffBar } from "./ui/buffs";
+import { AutoBot } from "./bot";
 import { DropAmountWindow } from "./ui/dropamount";
+import { HairstyleWindow } from "./ui/hairstyle";
 import { DRAG_TYPE } from "./ui/common";
 import { ChatBox } from "./ui/chatbox";
 import { ChatRoomWindow, RoomPasswordWindow, RoomSettingsWindow, roomResultMessage } from "./ui/chatroom";
@@ -30,6 +32,10 @@ const form = $<HTMLFormElement>("login-form");
 const nameInput = $<HTMLInputElement>("name");
 const passwordInput = $<HTMLInputElement>("password");
 const serverInput = $<HTMLInputElement>("server");
+// A release build is served by the game server itself: connect back to it.
+if (!import.meta.env.DEV) {
+  serverInput.value = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+}
 const errorText = $("login-error");
 const button = $<HTMLButtonElement>("login-button");
 const hud = $("hud");
@@ -86,7 +92,22 @@ function useSkill(skillId: number) {
   conn?.useSkill(skillId);
 }
 new BuffBar($("buffs"), state);
+
+// Auto attack (Alt+B): attacks the nearest monster, wanders to find more.
+const botBadge = $("bot-badge");
+const bot = new AutoBot(
+  () => game,
+  currentConn,
+  (running, reason) => {
+    botBadge.hidden = !running;
+    $("menu-bot").firstChild!.textContent = running ? "Stop Auto Attack " : "Auto Attack ";
+    toast(reason ?? (running ? "Auto attack on: hunting the nearest monsters." : "Auto attack off."));
+  },
+);
 const dropAmount = new DropAmountWindow(currentConn);
+const hairstyle = new HairstyleWindow(state, currentConn);
+/** Whether we've already asked this session for a hairstyle. */
+let askedForHair = false;
 
 // Dragging an inventory item onto the map drops it on the ground.
 canvas.addEventListener("dragover", (ev) => {
@@ -227,8 +248,27 @@ function handleUiPacket(p: ServerPacket): boolean {
       state.changed();
       return true;
     case "enterMap":
-      shop.window.close(); // shops don't follow you to another map
+      shop.window.close(); // shops and NPC talks don't follow you to another map
+      dialog.window.close();
+      state.selfId = p.selfId;
+      state.hair = p.look.hair;
+      state.hairColor = p.look.hairColor;
+      state.female = p.look.female;
+      state.changed();
+      // First login (no hairstyle chosen yet): ask once per session.
+      if (p.look.hair === 0 && !askedForHair) {
+        askedForHair = true;
+        hairstyle.show(true);
+      }
       return false;
+    case "look":
+      if (p.id === state.selfId) {
+        state.hair = p.look.hair;
+        state.hairColor = p.look.hairColor;
+        state.female = p.look.female;
+        state.changed();
+      }
+      return false; // the game redraws the character too
     default:
       return false;
   }
@@ -250,6 +290,14 @@ logoutButton.addEventListener("click", logout);
 $("menu-sit").addEventListener("click", () => {
   setMenuOpen(false);
   game?.toggleSit();
+});
+$("menu-hair").addEventListener("click", () => {
+  setMenuOpen(false);
+  hairstyle.show();
+});
+$("menu-bot").addEventListener("click", () => {
+  setMenuOpen(false);
+  bot.toggle();
 });
 $("menu-room").addEventListener("click", () => {
   setMenuOpen(false);
@@ -285,6 +333,7 @@ const shortcuts: Record<string, () => void> = {
   KeyA: () => statusWindow.window.toggle(),
   KeyS: () => skillWindow.window.toggle(),
   KeyC: openRoomCreator,
+  KeyB: () => bot.toggle(),
 };
 
 window.addEventListener("keydown", (ev) => {
@@ -341,6 +390,8 @@ function showLogin(error = "") {
   setMenuOpen(false);
   closeAllWindows();
   hideTooltip();
+  bot.stop();
+  askedForHair = false;
   state.reset();
   chatRoom.reset();
   chatBox.clear();
@@ -427,7 +478,7 @@ form.addEventListener("submit", async (ev) => {
         joinRoom,
         itemInfo: (id) => state.items?.get(id),
       });
-      chatBox.add("system", "Welcome to Morroc! Click to walk, talk or attack · Enter to chat · /help for chat commands · Alt+C opens a chat room");
+      chatBox.add("system", "Welcome to KDoiRo! Click to walk, talk or attack · Enter to chat · /help for chat commands · Alt+C opens a chat room");
       game.selfName = name;
       minimap.start();
       hotbar.show(name);

@@ -11,7 +11,10 @@
 
     <div id="hud" hidden>
       <div class="hud-card">
-        <div id="hud-name"></div>
+        <div class="hud-row">
+          <div id="hud-name"></div>
+          <span id="bot-badge" class="bot-badge" title="Auto attack is on (Alt+B to stop)" hidden>AUTO</span>
+        </div>
         <div id="hud-level" class="hud-sub"></div>
         <div id="hp-bar" class="bar hp" role="meter" aria-label="HP" aria-valuemin="0">
           <div class="bar-fill"></div>
@@ -51,6 +54,8 @@
           <button id="menu-skills" type="button" role="menuitem">Skills <kbd>Alt+S</kbd></button>
           <button id="menu-sit" type="button" role="menuitem">Sit / Stand <kbd>Insert</kbd></button>
           <button id="menu-room" type="button" role="menuitem">Chat Room <kbd>Alt+C</kbd></button>
+          <button id="menu-hair" type="button" role="menuitem">Appearance</button>
+          <button id="menu-bot" type="button" role="menuitem">Auto Attack <kbd>Alt+B</kbd></button>
           <button id="menu-sound" type="button" role="menuitem">Sound</button>
           <hr />
           <button id="logout-button" type="button" role="menuitem">Log out</button>

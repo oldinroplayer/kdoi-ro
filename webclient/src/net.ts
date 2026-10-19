@@ -112,6 +112,10 @@ export interface Look {
   headTop: number;
   headMid: number;
   headLow: number;
+  /** Hairstyle 1..19 (0 = not chosen yet: draw the default and ask). */
+  hair: number;
+  hairColor: number;
+  female: boolean;
 }
 
 export interface InvItem {
@@ -180,7 +184,10 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
   const u8 = () => v.getUint8(o++);
   const u16 = () => ((o += 2), v.getUint16(o - 2, true));
   const u32 = () => ((o += 4), v.getUint32(o - 4, true));
-  const look = (): Look => ({ weapon: u16(), shield: u16(), headTop: u16(), headMid: u16(), headLow: u16() });
+  const look = (): Look => ({
+    weapon: u16(), shield: u16(), headTop: u16(), headMid: u16(), headLow: u16(), hair: u16(), hairColor: u16(),
+    female: u16() === 1,
+  });
   const str = () => {
     const n = u8();
     o += n;
@@ -529,6 +536,11 @@ export class Connection {
   /** Walk to an item on the ground and pick it up. */
   pickUp(floorItemId: number): void {
     this.send(0x0019, (v) => v.setUint32(2, floorItemId, true), 4);
+  }
+
+  /** Change our hairstyle (1..19), hair colour (0..8) and gender. */
+  setAppearance(style: number, color: number, female: boolean): void {
+    this.sendFields(0x001b, [{ u8: style }, { u8: color }, { u8: female ? 1 : 0 }]);
   }
 
   /** Drop inventory items on the ground at our feet. */

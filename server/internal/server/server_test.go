@@ -34,6 +34,7 @@ func openGrid(t *testing.T, w, h int) *gat.Map {
 const (
 	shopNpc   = 50001
 	jobNpc    = 50002
+	kafraNpc  = 50003
 	dummyMob  = 9001
 	bruteMob  = 9002
 	helperMob = 9003 // two of these stand next to the spawn and assist each other
@@ -70,10 +71,11 @@ func startServer(t *testing.T) (string, *account.Store) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	store, err := account.Open(filepath.Join(t.TempDir(), "chars.json"))
+	store, err := account.Open(filepath.Join(t.TempDir(), "kdoiro.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { store.Close() }) // runs after the sessions have stopped (cleanups are LIFO)
 	w, err := world.New(world.Config{
 		Maps: map[string]*gat.Map{"morocc": openGrid(t, 20, 20), "field": openGrid(t, 10, 10)},
 		Warps: []world.Warp{
@@ -83,6 +85,11 @@ func startServer(t *testing.T) (string, *account.Store) {
 		NPCs: []world.NPC{
 			{ID: shopNpc, Name: "Shop", Sprite: "1_m_merchant", Map: "morocc", X: 10, Y: 12, Shop: []int{1201, 2301, 501}},
 			{ID: jobNpc, Name: "Job Guide", Sprite: "1_m_jobguider", Map: "morocc", X: 12, Y: 12, Kind: world.KindJobChange},
+			{ID: kafraNpc, Name: "Kafra Employee", Sprite: "4_f_kafra1", Map: "morocc", X: 8, Y: 8, Kind: world.KindKafra,
+				Kafra: &world.Kafra{Save: world.Location{Map: "morocc", X: 9, Y: 9}, Teleports: []world.Teleport{
+					{Name: "Field", Map: "field", X: 6, Y: 6, Price: 500},
+					{Name: "Nowhere", Map: "unloaded", X: 1, Y: 1, Price: 1}, // not offered: map not loaded
+				}}},
 		},
 		Spawns: []world.Spawn{
 			{Map: "morocc", X: 14, Y: 14, MobID: dummyMob, Count: 1},
@@ -640,7 +647,7 @@ func TestSitting(t *testing.T) {
 		r.U8()
 		r.U16()
 		r.U8()
-		for range 5 {
+		for range len(proto.Look{}) {
 			r.U16()
 		}
 		if id == aliceID {

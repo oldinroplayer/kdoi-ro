@@ -146,3 +146,19 @@ func TestShelledPickyDropsEggShell(t *testing.T) {
 		t.Fatalf("wearing Egg Shell: err=%v def=%d look=%+v", err, c.Derive().Def, c.Look())
 	}
 }
+
+func TestMonsterDropsAreKnownItems(t *testing.T) {
+	for id, m := range Mobs {
+		if m.Sprite == "" || m.HP <= 0 || m.WalkSpeed <= 0 {
+			t.Errorf("monster %d (%s) is incomplete: %+v", id, m.Name, m)
+		}
+		for _, d := range m.Drops {
+			if _, ok := Items[d.ItemID]; !ok {
+				t.Errorf("monster %d (%s) drops unknown item %d", id, m.Name, d.ItemID)
+			}
+		}
+	}
+	if len(Mobs) < 20 {
+		t.Errorf("only %d monsters: generated ones missing?", len(Mobs))
+	}
+}

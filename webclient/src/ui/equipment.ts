@@ -118,13 +118,16 @@ export class EquipmentWindow {
 
   private sprite: CharacterSprite | null = null;
   private spriteJob = 0;
+  private spriteFemale = false;
 
   private async drawPreview(): Promise<void> {
     const job = this.state.status?.job ?? 0;
-    if (!this.sprite || this.spriteJob !== job) {
+    const female = this.state.female;
+    if (!this.sprite || this.spriteJob !== job || this.spriteFemale !== female) {
       this.sprite?.dispose();
-      this.sprite = new CharacterSprite(await loadPlayerAssets(job));
+      this.sprite = new CharacterSprite(await loadPlayerAssets(job, female));
       this.spriteJob = job;
+      this.spriteFemale = female;
     }
     // Show the battle stance so the weapon and shield are visible, like RO's own preview.
     const worn = (slot: number) => this.state.equippedIn(slot)?.itemId ?? 0;
@@ -134,6 +137,9 @@ export class EquipmentWindow {
       headTop: worn(slots.headTop),
       headMid: worn(slots.headMid),
       headLow: worn(slots.headLow),
+      hair: this.state.hair,
+      hairColor: this.state.hairColor,
+      female,
     };
     this.sprite.setEquipment(await loadEquipLayers(look, (id) => this.state.items?.get(id)?.sprite || undefined, job));
     this.sprite.draw(PlayerAction.Ready, this.dir, 0);

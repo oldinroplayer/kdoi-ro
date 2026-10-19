@@ -473,6 +473,104 @@ button.small {
   gap: 12px;
 }
 
+/* Hairstyle window. */
+.hair-intro {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.hair-main {
+  display: flex;
+  gap: 12px;
+}
+
+.hair-left {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  align-content: start;
+}
+
+.hair-preview {
+  width: 128px;
+  height: 244px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  image-rendering: pixelated;
+}
+
+.hair-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.hair-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hair-grid,
+.hair-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.hair-genders {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.hair-gender[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.hair-choice {
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  line-height: 0;
+}
+
+.hair-choice canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+}
+
+.hair-choice[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+@media (max-width: 600px) {
+  .hair-main {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+.bot-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  animation: buff-blink 1.2s steps(2) infinite;
+}
+
+.bot-badge[hidden] {
+  display: none;
+}
+
 .buffs {
   display: flex;
   flex-wrap: wrap;

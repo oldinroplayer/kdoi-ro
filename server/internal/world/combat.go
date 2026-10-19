@@ -33,7 +33,8 @@ func (w *World) Respawn(id uint32) error {
 		p.dead = false
 		reviveVitals(&p.data)
 		w.removeFromMap(p)
-		w.place(p, w.maps[w.savePoint.Map], w.savePoint.X, w.savePoint.Y)
+		save := w.savePointOf(&p.data)
+		w.place(p, w.maps[save.Map], save.X, save.Y)
 		w.sendStatus(p)
 	})
 }

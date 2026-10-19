@@ -13,32 +13,33 @@ import (
 
 // Client -> server opcodes.
 const (
-	OpLogin      uint16 = 0x0001
-	OpMove       uint16 = 0x0002
-	OpNpcClick   uint16 = 0x0003
-	OpShopBuy    uint16 = 0x0004
-	OpEquip      uint16 = 0x0005
-	OpUnequip    uint16 = 0x0006
-	OpStatusUp   uint16 = 0x0007
-	OpAttack     uint16 = 0x0008
-	OpUseItem    uint16 = 0x0009
-	OpRespawn    uint16 = 0x000A
-	OpShopSell   uint16 = 0x000B
-	OpSit        uint16 = 0x000C
-	OpTurn       uint16 = 0x000D
-	OpLearn      uint16 = 0x000E
-	OpUseSkill   uint16 = 0x000F
-	OpNpcReply   uint16 = 0x0010
-	OpChat       uint16 = 0x0011
-	OpWhisper    uint16 = 0x0012
-	OpRoomCreate uint16 = 0x0013
-	OpRoomJoin   uint16 = 0x0014
-	OpRoomLeave  uint16 = 0x0015
-	OpRoomKick   uint16 = 0x0016
-	OpRoomUpdate uint16 = 0x0017
-	OpRoomOwner  uint16 = 0x0018
-	OpPickUp     uint16 = 0x0019
-	OpDropItem   uint16 = 0x001A
+	OpLogin         uint16 = 0x0001
+	OpMove          uint16 = 0x0002
+	OpNpcClick      uint16 = 0x0003
+	OpShopBuy       uint16 = 0x0004
+	OpEquip         uint16 = 0x0005
+	OpUnequip       uint16 = 0x0006
+	OpStatusUp      uint16 = 0x0007
+	OpAttack        uint16 = 0x0008
+	OpUseItem       uint16 = 0x0009
+	OpRespawn       uint16 = 0x000A
+	OpShopSell      uint16 = 0x000B
+	OpSit           uint16 = 0x000C
+	OpTurn          uint16 = 0x000D
+	OpLearn         uint16 = 0x000E
+	OpUseSkill      uint16 = 0x000F
+	OpNpcReply      uint16 = 0x0010
+	OpChat          uint16 = 0x0011
+	OpWhisper       uint16 = 0x0012
+	OpRoomCreate    uint16 = 0x0013
+	OpRoomJoin      uint16 = 0x0014
+	OpRoomLeave     uint16 = 0x0015
+	OpRoomKick      uint16 = 0x0016
+	OpRoomUpdate    uint16 = 0x0017
+	OpRoomOwner     uint16 = 0x0018
+	OpPickUp        uint16 = 0x0019
+	OpDropItem      uint16 = 0x001A
+	OpSetAppearance uint16 = 0x001B
 )
 
 // Server -> client opcodes.
@@ -281,6 +282,12 @@ type PickUp struct{ ItemID uint32 }
 // DropItem puts inventory items on the ground at the player's feet.
 type DropItem struct{ Index, Amount uint16 }
 
+// SetAppearance changes the player's hairstyle, hair colour and gender.
+type SetAppearance struct {
+	Style, Color uint8
+	Female       bool
+}
+
 type ShopSell struct {
 	NpcID uint32
 	Lines []SellLine
@@ -349,6 +356,8 @@ func Decode(b []byte) (any, error) {
 		pkt = &RoomKick{Name: r.String()}
 	case OpPickUp:
 		pkt = &PickUp{ItemID: r.U32()}
+	case OpSetAppearance:
+		pkt = &SetAppearance{Style: r.U8(), Color: r.U8(), Female: r.U8() != 0}
 	case OpDropItem:
 		pkt = &DropItem{Index: r.U16(), Amount: r.U16()}
 	case OpRoomOwner:
@@ -392,9 +401,10 @@ func EnterMap(selfID uint32, mapName string, x, y int, dir uint8, job uint16, sp
 	return look.write(w).Bytes()
 }
 
-// Look is a player's visible equipment as item IDs (0 = nothing):
-// weapon, shield, upper/middle/lower headgear.
-type Look [5]int
+// Look is what shows on a player's sprite: weapon, shield, upper/middle/lower
+// headgear as item IDs (0 = nothing), then hairstyle (0 = not chosen yet,
+// drawn as the default), hair colour and gender (1 = female).
+type Look [8]int
 
 func (l Look) write(w *Writer) *Writer {
 	for _, id := range l {

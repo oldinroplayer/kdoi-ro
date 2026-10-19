@@ -51,7 +51,12 @@ func (w *World) NpcReply(id, npcID uint32, choice uint8) error {
 		if choice == proto.NpcReplyClose || p.dead || n.Map != p.m.name || chebyshev(p.x, p.y, n.X, n.Y) > shopRange {
 			return
 		}
-		if n.Kind == KindJobChange && int(choice) < len(game.FirstJobs) {
+		switch {
+		case n.Kind == KindKafra:
+			w.kafraReply(p, n, int(choice))
+		case n.Kind == KindWarper:
+			w.warperReply(p, n, int(choice))
+		case n.Kind == KindJobChange && int(choice) < len(game.FirstJobs):
 			w.changeJob(p, n, game.FirstJobs[choice])
 		}
 	})

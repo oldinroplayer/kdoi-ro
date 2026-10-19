@@ -161,6 +161,18 @@ interface RoomSign {
 /** How long a speech bubble stays up (ms). */
 const SPEECH_MS = 5000;
 
+/** What the auto-attack bot sees (see bot.ts). Cells are whole map cells. */
+export interface BotView {
+  map: string;
+  self: { x: number; y: number; dead: boolean; sitting: boolean; walking: boolean };
+  /** Live monsters on the map. */
+  monsters: { id: number; x: number; y: number }[];
+  /** Items lying on the ground. */
+  items: { id: number; x: number; y: number }[];
+  /** Our last swing (hit or miss) at a monster, and when (performance.now()). */
+  lastSwing: { target: number; at: number };
+}
+
 /** A skill waiting for the player to click its target. */
 interface Targeting {
   skillId: number;
@@ -192,7 +204,7 @@ export class Game {
   private readonly floats: FloatingTexts;
   private map: MapView | null = null;
   /** Player body sprites already loaded, by job. */
-  private readonly playerAssets = new Map<number, CharacterAssets>();
+  private readonly playerAssets = new Map<string, CharacterAssets>();
   /** Monster sprites already loaded, by sprite name. */
   private readonly monsterAssets = new Map<string, CharacterAssets>();
   private readonly units = new Map<number, Unit>();
@@ -214,6 +226,8 @@ export class Game {
   private ambientNext: number[] = [];
   private nextAmbientCheck = 0;
   private selfId = 0;
+  /** Our last attack on a monster, for the bot to see the fight is on. */
+  private lastSwing = { target: 0, at: 0 };
   private loading = false;
   private queue: ServerPacket[] = [];
   private yaw = 0;
@@ -314,8 +328,10 @@ export class Game {
       case "look": {
         const u = this.units.get(p.id);
         if (u) {
+          const genderChanged = (u.look?.female ?? false) !== p.look.female;
           u.look = p.look;
-          this.applyLook(u);
+          if (genderChanged && u.kind === "player") void this.setJob(u, u.job); // new body
+          else this.applyLook(u);
         }
         break;
       }
@@ -364,9 +380,12 @@ export class Game {
         this.removeFloorItem(p.id);
         break;
       case "pickUp": {
-        // RO's pick-up motion: a quick crouch.
+        // RO's pick-up motion (body action 3: bending down to the ground).
         const u = this.units.get(p.id);
-        if (u && !u.dead) u.oneShot = { group: PlayerAction.Sit, start: performance.now(), duration: 300 };
+        if (u && !u.dead) {
+          const duration = Math.max(u.sprite.duration(PlayerAction.PickUp), 200);
+          u.oneShot = { group: PlayerAction.PickUp, start: performance.now(), duration };
+        }
         break;
       }
       case "roomGone":
@@ -386,12 +405,7 @@ export class Game {
       }
       case "levelUp": {
         const u = this.units.get(p.id);
-        if (u) {
-          const [text, kind] =
-            p.kind === 2 ? ["JOB CHANGE!", "level"] : p.kind === 1 ? ["JOB LEVEL UP", "level job"] : ["LEVEL UP!", "level"];
-          this.floats.spawn(text, kind, this.headOf(u));
-          audio.play("levelup.wav", this.volumeAt(u));
-        }
+        if (u) this.playLevelUp(u, p.kind);
         break;
       }
       case "heal": {
@@ -480,11 +494,12 @@ export class Game {
     }
   }
 
-  private async jobSprite(job: number): Promise<CharacterAssets> {
-    const cached = this.playerAssets.get(job);
+  private async jobSprite(job: number, female = false): Promise<CharacterAssets> {
+    const key = `${job}:${female}`;
+    const cached = this.playerAssets.get(key);
     if (cached) return cached;
-    const assets = await loadPlayerAssets(job);
-    this.playerAssets.set(job, assets);
+    const assets = await loadPlayerAssets(job, female);
+    this.playerAssets.set(key, assets);
     return assets;
   }
 
@@ -501,7 +516,7 @@ export class Game {
     sitting: boolean,
   ) {
     const generation = this.mapGeneration;
-    const assets = this.playerAssets.get(job) ?? (await this.jobSprite(job));
+    const assets = this.playerAssets.get(`${job}:${look.female}`) ?? (await this.jobSprite(job, look.female));
     if (generation !== this.mapGeneration || this.disposed) return;
     const u = this.addUnit(id, "player", name, speed, assets, x, y, dir, id === this.selfId ? "self" : "player");
     u.job = job;
@@ -511,9 +526,9 @@ export class Game {
     this.applyLook(u);
   }
 
-  /** Swaps a player's body sprite after a job change, keeping everything else. */
+  /** Swaps a player's body sprite after a job or gender change, keeping everything else. */
   private async setJob(u: Unit, job: number) {
-    const assets = await this.jobSprite(job);
+    const assets = await this.jobSprite(job, u.look?.female ?? false);
     if (this.units.get(u.id) !== u) return;
     u.job = job;
     this.scene.remove(u.sprite.object);
@@ -554,6 +569,27 @@ export class Game {
   }
 
   /** Sits down or stands up (RO's Insert key). */
+  /** A snapshot for the auto-attack bot, or null while no map is shown. */
+  botView(): BotView | null {
+    const self = this.units.get(this.selfId);
+    if (!self || !this.map || this.loading) return null;
+    const monsters = [...this.units.values()]
+      .filter((u) => u.kind === "monster" && !u.dead && !u.dyingSince)
+      .map((u) => ({ id: u.id, x: Math.floor(u.x), y: Math.floor(u.y) }));
+    return {
+      map: this.map.name,
+      self: { x: Math.floor(self.x), y: Math.floor(self.y), dead: self.dead, sitting: self.sitting, walking: self.walk.length > 0 },
+      monsters,
+      items: [...this.floorItems.values()].map((it) => ({ id: it.id, x: Math.floor(it.x), y: Math.floor(it.y) })),
+      lastSwing: this.lastSwing,
+    };
+  }
+
+  /** Whether a cell can be walked on (for picking wander destinations). */
+  walkable(x: number, y: number): boolean {
+    return !!this.map && isWalkable(this.map.gat, x, y);
+  }
+
   toggleSit(): void {
     const self = this.units.get(this.selfId);
     if (!self || self.dead || !this.conn.connected) return;
@@ -714,6 +750,7 @@ export class Game {
     const target = this.units.get(p.target);
     if (src) src.lastCombat = now;
     if (target) target.lastCombat = now;
+    if (p.src === this.selfId) this.lastSwing = { target: p.target, at: now };
     // Magic (motion 0) is cast, not swung: the caster only turns to face.
     const magic = p.motion === 0;
     if (src && !src.dead) {
@@ -843,8 +880,28 @@ export class Game {
     return this.whenLoaded(loadTexture(path), (tex) => new RisingImage(tex, this.anchorOf(u, HEAD_HEIGHT)));
   }
 
-  private playSprite(name: string, u: Unit) {
-    return this.whenLoaded(loadEffectAssets(name), (assets) => new SpriteEffect(assets, this.anchorOf(u, HEAD_HEIGHT + 20)));
+  private playSprite(name: string, u: Unit, px = HEAD_HEIGHT + 20) {
+    return this.whenLoaded(loadEffectAssets(name), (assets) => new SpriteEffect(assets, this.anchorOf(u, px)));
+  }
+
+  /** RO's level up effects. kind: 0 base level, 1 job level, 2 job change. */
+  private playLevelUp(u: Unit, kind: number) {
+    const volume = this.volumeAt(u);
+    if (kind === 0) {
+      // The white angel with a halo spreading its wings over the character,
+      // with feathers drifting down (texture/effect/angel.str).
+      void this.playStr("angel", u, 0);
+      audio.play("levelup.wav", volume);
+      return;
+    }
+    // Job level: the burst of rings and sparks spelling "Job Lv Up".
+    void this.playStr("joblvup", u, 0);
+    audio.play("effect/st_job_level_up.wav", volume);
+    if (kind === 2) {
+      // A new job: the angel too, and a word for it (RO has no banner of its own).
+      void this.playStr("angel", u, 0);
+      this.floats.spawn("JOB CHANGE!", "level", this.headOf(u));
+    }
   }
 
   private playCastCircle(u: Unit, element: number, ms: number) {

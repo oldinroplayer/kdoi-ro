@@ -2,3 +2,4 @@ ro-client
 webclient/public/data
 webclient/public/bgm
 .DS_Store
+build/

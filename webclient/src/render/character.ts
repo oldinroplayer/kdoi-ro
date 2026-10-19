@@ -19,7 +19,7 @@ const FOOT_Y = 176;
  * Player ACT action groups; the action index is group * 8 + direction.
  * Weapons and shields only have frames in Ready (battle stance) and attacks.
  */
-export const PlayerAction = { Idle: 0, Walk: 1, Sit: 2, Ready: 4, Attack: 10, AttackSword: 11, Hurt: 6, Dead: 8 } as const;
+export const PlayerAction = { Idle: 0, Walk: 1, Sit: 2, PickUp: 3, Ready: 4, Attack: 10, AttackSword: 11, Hurt: 6, Dead: 8 } as const;
 
 /** Monster ACT action groups. */
 export const MonsterAction = { Idle: 0, Walk: 1, Attack: 2, Hurt: 3, Die: 4 } as const;
@@ -42,9 +42,14 @@ function loadSpriteSet(path: string): Promise<SpriteSet> {
   return p;
 }
 
-async function fetchSpriteSet(path: string): Promise<SpriteSet> {
-  const [sprBuf, actBuf] = await Promise.all([fetchData(`${path}.spr`), fetchData(`${path}.act`)]);
-  const spr = parseSpr(sprBuf);
+async function fetchSpriteSet(path: string, palettePath?: string): Promise<SpriteSet> {
+  const [sprBuf, actBuf, palBuf] = await Promise.all([
+    fetchData(`${path}.spr`),
+    fetchData(`${path}.act`),
+    // A missing palette just leaves the sprite's own colours.
+    palettePath ? fetchData(palettePath).catch(() => undefined) : Promise.resolve(undefined),
+  ]);
+  const spr = parseSpr(sprBuf, palBuf ? new Uint8Array(palBuf) : undefined);
   const toCanvas = (img: { width: number; height: number; rgba: Uint8ClampedArray }) => {
     const c = document.createElement("canvas");
     c.width = Math.max(1, img.width);
@@ -55,6 +60,30 @@ async function fetchSpriteSet(path: string): Promise<SpriteSet> {
     return c;
   };
   return { act: parseAct(actBuf), indexed: spr.indexed.map(toCanvas), rgba: spr.rgba.map(toCanvas) };
+}
+
+/** The hairstyle drawn for characters that haven't chosen one (the old fixed head). */
+export const DEFAULT_HAIR = 2;
+/** The 2004 client's male hairstyles and colours (matching game.HairStyles/HairColors). */
+export const HAIR_STYLES = 19;
+export const HAIR_COLORS = 9;
+
+/** The Korean sex suffix RO files sprites under: 여 (female) or 남 (male). */
+export const sexOf = (female: boolean) => (female ? "여" : "남");
+
+/** A head: hairstyle 1..19 in colour 0..8 (data/palette/머리/). */
+export function loadHead(style: number, color: number, female = false): Promise<SpriteSet> {
+  const s = style >= 1 && style <= HAIR_STYLES ? style : DEFAULT_HAIR;
+  const c = color >= 0 && color < HAIR_COLORS ? color : 0;
+  const sex = sexOf(female);
+  const key = `head:${sex}:${s}:${c}`;
+  let p = spriteSets.get(key);
+  if (!p) {
+    p = fetchSpriteSet(`sprite/인간족/머리통/${sex}/${s}_${sex}`, `palette/머리/머리${s}_${sex}_${c}.pal`);
+    p.catch(() => spriteSets.delete(key));
+    spriteSets.set(key, p);
+  }
+  return p;
 }
 
 export interface CharacterAssets {
@@ -79,19 +108,21 @@ const jobFolder = (job: number) => (JOBS[job] ?? JOBS[0])[0];
 /** A job's display name (Novice for unknown IDs). */
 export const jobName = (job: number) => (JOBS[job] ?? JOBS[0])[1];
 
-const playerAssets = new Map<number, Promise<CharacterAssets>>();
+const playerAssets = new Map<string, Promise<CharacterAssets>>();
 
-/** A male character of a job, with the default hairstyle. */
-export function loadPlayerAssets(job: number): Promise<CharacterAssets> {
-  let p = playerAssets.get(job);
+/** A character of a job and gender, with the default hairstyle. */
+export function loadPlayerAssets(job: number, female = false): Promise<CharacterAssets> {
+  const sex = sexOf(female);
+  const key = `${job}:${sex}`;
+  let p = playerAssets.get(key);
   if (!p) {
     p = Promise.all([
-      loadSpriteSet(`sprite/인간족/몸통/남/${jobFolder(job)}_남`),
-      loadSpriteSet("sprite/인간족/머리통/남/2_남"),
+      loadSpriteSet(`sprite/인간족/몸통/${sex}/${jobFolder(job)}_${sex}`),
+      loadHead(DEFAULT_HAIR, 0, female),
       loadSpriteSet("sprite/shadow"),
     ]).then(([body, head, shadow]) => ({ body, head, shadow }));
-    p.catch(() => playerAssets.delete(job));
-    playerAssets.set(job, p);
+    p.catch(() => playerAssets.delete(key));
+    playerAssets.set(key, p);
   }
   return p;
 }
@@ -133,6 +164,8 @@ export interface EquipLayers {
   slash?: SpriteSet;
   shield?: SpriteSet;
   headgear: SpriteSet[];
+  /** The chosen hairstyle; replaces the assets' default head. */
+  head?: SpriteSet;
 }
 
 /** Weapon class sprite name by item ID range (RO's item_db numbering). */
@@ -154,6 +187,7 @@ export async function loadEquipLayers(
   job: number,
 ): Promise<EquipLayers> {
   const folder = jobFolder(job);
+  const sex = sexOf(look.female);
   const load = async (itemId: number, path: (name: string) => string) => {
     const name = itemId ? spriteOf(itemId) : undefined;
     if (!name) return undefined;
@@ -165,18 +199,22 @@ export async function loadEquipLayers(
     }
   };
   const slashClass = look.weapon ? weaponClass(look.weapon) : undefined;
-  const [weapon, slash, shield, top, mid, low] = await Promise.all([
-    load(look.weapon, (n) => `sprite/인간족/${folder}/${folder}_남_${n}`),
+  const [head, weapon, slash, shield, top, mid, low] = await Promise.all([
+    loadHead(look.hair || DEFAULT_HAIR, look.hairColor, look.female).catch((err) => {
+      console.warn("hairstyle missing", look.hair, look.hairColor, err);
+      return undefined;
+    }),
+    load(look.weapon, (n) => `sprite/인간족/${folder}/${folder}_${sex}_${n}`),
     slashClass
-      ? loadSpriteSet(`sprite/인간족/${folder}/${folder}_남_${slashClass}_검광`).catch(() => undefined)
+      ? loadSpriteSet(`sprite/인간족/${folder}/${folder}_${sex}_${slashClass}_검광`).catch(() => undefined)
       : Promise.resolve(undefined),
-    load(look.shield, (n) => `sprite/방패/${folder}/${folder}_남_${n}`),
-    load(look.headTop, (n) => `sprite/악세사리/남/남_${n}`),
-    load(look.headMid, (n) => `sprite/악세사리/남/남_${n}`),
-    load(look.headLow, (n) => `sprite/악세사리/남/남_${n}`),
+    load(look.shield, (n) => `sprite/방패/${folder}/${folder}_${sex}_${n}`),
+    load(look.headTop, (n) => `sprite/악세사리/${sex}/${sex}_${n}`),
+    load(look.headMid, (n) => `sprite/악세사리/${sex}/${sex}_${n}`),
+    load(look.headLow, (n) => `sprite/악세사리/${sex}/${sex}_${n}`),
   ]);
   // RO draws lower, then middle, then upper headgear.
-  return { weapon, slash, shield, headgear: [low, mid, top].filter((s): s is SpriteSet => !!s) };
+  return { head, weapon, slash, shield, headgear: [low, mid, top].filter((s): s is SpriteSet => !!s) };
 }
 
 export class CharacterSprite {
@@ -239,7 +277,8 @@ export class CharacterSprite {
     if (key === this.drawn) return;
     this.drawn = key;
 
-    const { body, head, shadow } = this.assets;
+    const { body, shadow } = this.assets;
+    const head = this.equipment.head ?? this.assets.head;
     const ctx = this.ctx;
     ctx.clearRect(0, 0, CANVAS, CANVAS);
 

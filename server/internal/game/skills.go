@@ -72,6 +72,18 @@ func init() {
 	// The 2004 skill_db lists Magnum Break as targeted; in RO it bursts around
 	// the caster, so it's used on yourself here.
 	Skills[SkillMagnumBreak].Target = TargetSelf
+
+	// The cities' monsters and items (gen_world.py); hand-written ones win.
+	for _, m := range generatedMobs {
+		if _, ok := Mobs[m.ID]; !ok {
+			Mobs[m.ID] = m
+		}
+	}
+	for _, it := range generatedItems {
+		if _, ok := Items[it.ID]; !ok {
+			Items[it.ID] = it
+		}
+	}
 }
 
 // 1st-job skill IDs used by the game rules.

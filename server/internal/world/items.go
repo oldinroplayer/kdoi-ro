@@ -19,8 +19,15 @@ func (w *World) ClickNpc(id, npcID uint32) error {
 			p.out.Send(proto.Message("You are too far away."))
 			return
 		}
-		if n.Kind == KindJobChange {
+		switch n.Kind {
+		case KindJobChange:
 			w.jobGuideTalk(p, n)
+			return
+		case KindKafra:
+			w.kafraTalk(p, n)
+			return
+		case KindWarper:
+			w.warperTalk(p, n)
 			return
 		}
 		if len(n.Shop) == 0 {
@@ -130,6 +137,19 @@ func (w *World) changeLook(p *Player, change func() error) error {
 		w.broadcast(p.m, proto.PlayerLook(p.id, after))
 	}
 	return nil
+}
+
+// SetAppearance changes a player's hairstyle, colour and gender and shows everyone.
+func (w *World) SetAppearance(id uint32, style, color int, female bool) error {
+	return w.do(func() {
+		p := w.players[id]
+		if p == nil {
+			return
+		}
+		if err := w.changeLook(p, func() error { return p.data.SetAppearance(style, color, female) }); err != nil {
+			p.out.Send(proto.Message("That hairstyle isn't available."))
+		}
+	})
 }
 
 // RaiseStat spends status points on one of STR..LUK (0-5).

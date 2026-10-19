@@ -38,10 +38,32 @@ model, texture, water frame and ambient sound it uses:
 python3 tools/grf_extract.py ro-client/data.grf ro-client --map morocc --map moc_fild07 --map moc_fild06
 ```
 
+**Cities** (Prontera, Izlude, Geffen, Payon, Alberta and their fields): the
+maps, then the monster, NPC and item files their generated content uses
+(`tools/extract_world.py` reads them from the server's Go data files):
+
+```bash
+for m in prontera izlude geffen payon alberta prt_castle prt_fild08 prt_fild05 prt_fild06 gef_fild04 gef_fild00 gef_fild07 pay_arche pay_fild01 pay_fild08 pay_gld pay_fild03 prt_fild07 moc_fild12; do python3 tools/grf_extract.py ro-client/data.grf ro-client --map $m; done
+python3 tools/extract_world.py
+```
+
 **Tables** (item and skill names and descriptions, map names, BGM per map):
 
 ```bash
 for t in idnum2itemdisplaynametable idnum2itemresnametable idnum2itemdesctable skillnametable skilldesctable mapnametable mp3nametable; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\$t.txt"; done
+```
+
+**Appearance** (male and female: the 19 heads with their 9 hair colour palettes
+each, the female job bodies, and each job's female weapons, swing trails,
+shields and the headgear in the item list):
+
+```bash
+python3 tools/grf_extract.py ro-client/data.grf ro-client --filter '머리통\남\'
+python3 tools/grf_extract.py ro-client/data.grf ro-client --filter '머리통\여\'
+python3 tools/grf_extract.py ro-client/data.grf ro-client --filter 'palette\머리\'
+python3 tools/grf_extract.py ro-client/data.grf ro-client --filter '몸통\여\'
+for j in 초보자 검사 마법사 궁수 성직자 상인 도둑; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "인간족\\$j\\${j}_여_"; python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "방패\\$j\\${j}_여_가드."; done
+for h in 햇 장식용알껍질; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "악세사리\\여\\여_$h."; done
 ```
 
 **Sprites** (Novice body and head, shadow, shop NPCs, monsters, visible equipment and weapon swing trails):
@@ -88,6 +110,9 @@ Blessing's angel sprite, and the skill sounds):
 ```bash
 for f in firehit1.str icecrash.str lightning.str invenom.str fire.str lens_r.bmp pokjuk_c.bmp firering.bmp invenom_ring.bmp freeze_a.bmp freeze_ice.bmp freeze_iceb.bmp freeze_icec.bmp freeze_ice_part.bmp light_a.bmp light_b.bmp light_c.bmp light_d.bmp light_e.bmp light_bang_a.bmp light_bang_b.bmp cir_a.bmp cir_b.bmp cir_c.bmp fire_a.bmp fire_b.bmp pika02.bmp lord_blast_b.bmp magic_red.tga magic_blue.tga magic_green.tga magic_violet.tga magic_sky.tga agi_up.bmp; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "texture\\effect\\$f"; done
 python3 tools/grf_extract.py ro-client/data.grf ro-client --filter 'sprite\이팩트\축복.'
+# Level up: the angel with wings and feathers (base level) and the "Job Lv Up" burst, with their textures
+for f in angel.str wing000.bmp wing002.bmp wing003.bmp wing004.bmp anglewing.bmp wing_paticle00.bmp wing_paticle01.bmp wing_paticle02.bmp joblvup.str explosive_1_128.bmp ring_b.bmp rockon.bmp igle_a.bmp igle_d.bmp igle_e.bmp igle_f.bmp pokjuk_a.bmp pokjuk_b.bmp pokjuk_d.bmp job.bmp lv.bmp up.bmp; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "texture\\effect\\$f"; done
+python3 tools/grf_extract.py ro-client/data.grf ro-client --filter 'wav\effect\st_job_level_up.wav'
 for w in ef_bash ef_magnumbreak ef_firearrow1 ef_firearrow2 ef_firearrow3 ef_icearrow1 ef_icearrow2 ef_icearrow3 ef_lightbolt1 ef_lightbolt2 ef_lightbolt3 ef_beginspell ef_incagility ef_blessing ef_coin1 thief_invenom; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\wav\\effect\\$w.wav"; done
 for w in _heal_effect _hit_arrow; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\wav\\$w.wav"; done
 ```
@@ -124,6 +149,26 @@ cd webclient && npm install && npm run dev
 Open http://localhost:5173. See `server/README.md` for the protocol and
 `webclient/README.md` for the client layout.
 
+## 5. Release build
+
+`build.sh` tests and builds both halves into `build/`: the server binary, the
+web client, the game files (copied from `ro-client/`), and `run.sh`. The server
+then serves everything itself, so the release is one command and one port:
+
+```bash
+./build.sh
+```
+
+```bash
+build/run.sh
+```
+
+Open http://localhost:7000. Characters are kept in `build/save/kdoiro.db`, which
+rebuilds leave alone. Options: `--os linux --arch amd64` cross-compiles the
+server (it's pure Go), `--link-assets` symlinks the ~400 MB of game files
+instead of copying them, and `--no-assets` leaves them out. `build/` contains
+Gravity's client files, so keep it for your own use.
+
 ## Reference data
 
 `reference/eathena-2004/` holds the monster, item, spawn, warp, shop and NPC
@@ -145,6 +190,22 @@ skill does is written by hand in `game/skillrules.go` and `world/skills.go`:
 ```bash
 python3 tools/gen_skills.py
 ```
+
+The cities beyond Morroc are generated too: maps, warps, field spawns, outdoor
+shops and Kafras into `server/cmd/server/world_data.go`, and their monsters and
+items into `server/internal/game/mobs_data.go` and `items_data.go`. Edit `MAPS`
+in the script to add a city or field. Passing a GRF listing lets it check that
+every monster and NPC sprite exists:
+
+```bash
+python3 tools/grf_extract.py ro-client/data.grf x --list > /tmp/grf.txt
+python3 tools/gen_world.py /tmp/grf.txt
+```
+
+The client is from August 2004 and still has the old 200×200 Payon, while
+eAthena's November data describes the renewed town; the script moves Payon's
+exits and Kafra to the old map (see `OLD_PAYON_*`). `go test ./cmd/server`
+checks every generated warp, NPC and Kafra destination against the maps.
 
 ## Adding content
 
