@@ -1,9 +1,10 @@
 // The chat box (bottom left): a log of what's said nearby, whispers and
 // system messages, and a line to type in. Like RO: Enter starts typing,
 // "/w Name message" whispers, "/r message" replies to the last whisper.
+import { EMOTE_COMMANDS, EMOTE_HELP } from "../emotes";
 import type { Connection } from "../net";
 
-export type ChatLineKind = "public" | "self" | "whisper-in" | "whisper-out" | "room" | "system" | "error";
+export type ChatLineKind = "public" | "self" | "whisper-in" | "whisper-out" | "room" | "party" | "system" | "error";
 
 const MAX_LINES = 150;
 
@@ -86,6 +87,16 @@ export class ChatBox {
   private submit(text: string): void {
     const conn = this.conn();
     if (!conn) return;
+    // "%message" is RO's party chat.
+    if (text.startsWith("%")) {
+      if (text.length > 1) conn.partyChat(text.slice(1).trim());
+      return;
+    }
+    const emote = EMOTE_COMMANDS[text.toLowerCase()];
+    if (emote !== undefined) {
+      conn.emote(emote);
+      return;
+    }
     const command = /^\/(\w+)\s*(.*)$/.exec(text);
     if (!command) {
       conn.chat(text);
@@ -112,8 +123,25 @@ export class ChatBox {
       case "chat":
         this.commands.openRoomCreator();
         return;
+      case "p":
+      case "party":
+        if (rest) conn.partyChat(rest);
+        return;
+      case "organize":
+        if (rest) conn.createParty(rest);
+        else this.add("error", "Usage: /organize Party Name");
+        return;
+      case "invite":
+        if (rest) conn.inviteToParty(rest);
+        else this.add("error", "Usage: /invite Name");
+        return;
+      case "leave":
+        conn.leaveParty();
+        return;
       case "help":
         this.add("system", "Enter to chat · /w Name message to whisper · /r message to reply · /room (Alt+C) to open a chat room");
+        this.add("system", "Party (Alt+Z): /organize Name · /invite Name · /leave · %message or /p message to talk to your party");
+        this.add("system", `Emoticons: ${EMOTE_HELP}`);
         return;
       default:
         this.add("error", `Unknown command /${name}. Type /help.`);

@@ -86,6 +86,18 @@ var migrations = []string{
 	`ALTER TABLE characters ADD COLUMN hair INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE characters ADD COLUMN hair_color INTEGER NOT NULL DEFAULT 0;`,
 	`ALTER TABLE characters ADD COLUMN female INTEGER NOT NULL DEFAULT 0;`,
+	`CREATE TABLE parties (
+		id       INTEGER PRIMARY KEY,
+		name     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+		leader   TEXT    NOT NULL,
+		even_exp INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE party_members (
+		party_id INTEGER NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
+		position INTEGER NOT NULL, -- joining order
+		name     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+		PRIMARY KEY (party_id, position)
+	);`,
 }
 
 // Open opens (creating if needed) the database at path and brings its schema
@@ -339,4 +351,85 @@ func (s *Store) ImportJSON(path string) (int, error) {
 		}
 	}
 	return len(list), nil
+}
+
+// Party is a party as stored: its members are character names.
+type Party struct {
+	ID      uint32
+	Name    string
+	Leader  string
+	Members []string
+	EvenEXP bool
+}
+
+// Parties loads every party.
+func (s *Store) Parties() ([]Party, error) {
+	rows, err := s.db.Query(`SELECT p.id, p.name, p.leader, p.even_exp, m.name
+		FROM parties p JOIN party_members m ON m.party_id = p.id ORDER BY p.id, m.position`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Party
+	for rows.Next() {
+		var pt Party
+		var member string
+		if err := rows.Scan(&pt.ID, &pt.Name, &pt.Leader, &pt.EvenEXP, &member); err != nil {
+			return nil, err
+		}
+		if len(out) == 0 || out[len(out)-1].ID != pt.ID {
+			out = append(out, pt)
+		}
+		last := &out[len(out)-1]
+		last.Members = append(last.Members, member)
+	}
+	return out, rows.Err()
+}
+
+// SaveParty creates or replaces a party and its member list.
+func (s *Store) SaveParty(pt Party) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO parties (id, name, leader, even_exp) VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, leader = excluded.leader, even_exp = excluded.even_exp`,
+		pt.ID, pt.Name, pt.Leader, pt.EvenEXP); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM party_members WHERE party_id = ?`, pt.ID); err != nil {
+		return err
+	}
+	for i, m := range pt.Members {
+		if _, err := tx.Exec(`INSERT INTO party_members (party_id, position, name) VALUES (?, ?, ?)`, pt.ID, i, m); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DeleteParty removes a disbanded party.
+func (s *Store) DeleteParty(id uint32) error {
+	_, err := s.db.Exec(`DELETE FROM parties WHERE id = ?`, id)
+	return err
+}
+
+// RelocateAll moves every saved character to a map cell (they start there at
+// their next login). It returns how many characters were updated.
+func (s *Store) RelocateAll(mapName string, x, y int) (int64, error) {
+	res, err := s.db.Exec(`UPDATE characters SET map = ?, x = ?, y = ?`, mapName, x, y)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// SaveAll sets every saved character's respawn point.
+func (s *Store) SaveAll(mapName string, x, y int) (int64, error) {
+	res, err := s.db.Exec(`UPDATE characters SET save_map = ?, save_x = ?, save_y = ?`, mapName, x, y)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

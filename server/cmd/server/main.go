@@ -36,15 +36,16 @@ func main() {
 	origins := flag.String("origins", "localhost:*,127.0.0.1:*", "comma-separated browser origin patterns allowed to connect")
 	webDir := flag.String("web", "", "built web client to serve at / (with -data at /data and -bgm at /bgm); empty = API only")
 	bgmDir := flag.String("bgm", "", "BGM folder served at /bgm when -web is set")
+	expRate := flag.Float64("exp-rate", 1, "monster EXP multiplier (2 = x2); the console's exprate changes it live")
 	flag.Parse()
 
-	if err := run(*addr, *dataDir, *mapList, *dbPath, *importJSON, *origins, *webDir, *bgmDir); err != nil {
+	if err := run(*addr, *dataDir, *mapList, *dbPath, *importJSON, *origins, *webDir, *bgmDir, *expRate); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir string) error {
+func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir string, expRate float64) error {
 	maps := map[string]*gat.Map{}
 	for _, name := range strings.Split(mapList, ",") {
 		name = strings.TrimSpace(name)
@@ -55,9 +56,12 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 		maps[name] = m
 		slog.Info("loaded map", "name", name, "size", [2]int{m.Width, m.Height})
 	}
-	spawn := server.Spawn{Map: "morocc", X: 156, Y: 93}
+	// New characters start (and respawn, until they save at a Kafra) at the
+	// camp outside Payon Cave in the Archer Village, beside the Job Guide and
+	// dealers, just east of the lane out of the cave.
+	spawn := server.Spawn{Map: "pay_arche", X: 46, Y: 131}
 	if _, ok := maps[spawn.Map]; !ok {
-		return errors.New("spawn map morocc is not loaded")
+		return errors.New("spawn map " + spawn.Map + " is not loaded")
 	}
 
 	store, err := account.Open(dbPath)
@@ -145,12 +149,23 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 			npcs = append(npcs, n)
 		}
 	}
+	saved, err := store.Parties()
+	if err != nil {
+		return fmt.Errorf("loading parties: %w", err)
+	}
+	parties := make([]world.PartyRecord, len(saved))
+	for i, p := range saved {
+		parties[i] = world.PartyRecord{ID: p.ID, Name: p.Name, Leader: p.Leader, Members: p.Members, EvenEXP: p.EvenEXP}
+	}
 	w, err := world.New(world.Config{
-		Maps:      maps,
-		Warps:     warps,
-		NPCs:      npcs,
-		Spawns:    spawns,
-		SavePoint: world.Location{Map: spawn.Map, X: spawn.X, Y: spawn.Y},
+		Parties:    parties,
+		PartyStore: partyStore{store},
+		Maps:       maps,
+		Warps:      warps,
+		NPCs:       npcs,
+		Spawns:     spawns,
+		SavePoint:  world.Location{Map: spawn.Map, X: spawn.X, Y: spawn.Y},
+		ExpRate:    expRate,
 	})
 	if err != nil {
 		return err
@@ -178,6 +193,7 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpSrv.ListenAndServe() }()
+	go runConsole(os.Stdin, os.Stdout, w, store)
 	slog.Info("listening", "addr", addr, "ws", "/ws")
 
 	select {
@@ -225,4 +241,11 @@ func serveSkills(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*") // public, read-only data
 	json.NewEncoder(w).Encode(skills)
+}
+
+// partyStore saves the world's parties in the character database.
+type partyStore struct{ *account.Store }
+
+func (s partyStore) SaveParty(p world.PartyRecord) error {
+	return s.Store.SaveParty(account.Party{ID: p.ID, Name: p.Name, Leader: p.Leader, Members: p.Members, EvenEXP: p.EvenEXP})
 }

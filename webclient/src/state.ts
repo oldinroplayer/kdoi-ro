@@ -1,5 +1,5 @@
 // The player's own state as last reported by the server; UI windows render from it.
-import type { InvItem, Status } from "./net";
+import type { InvItem, PartyInfo, Status } from "./net";
 import type { ItemDb } from "./items";
 import type { SkillDb } from "./skills";
 
@@ -34,6 +34,8 @@ export class PlayerState {
   /** Our unit ID on the current map. */
   selfId = 0;
   /** Our hairstyle (0 = not chosen yet) and hair colour. */
+  /** Our party, or null. */
+  party: PartyInfo | null = null;
   hair = 0;
   hairColor = 0;
   female = false;
@@ -57,6 +59,7 @@ export class PlayerState {
     this.shop = null;
     this.buffs = new Map();
     this.selfId = 0;
+    this.party = null;
     this.hair = this.hairColor = 0;
     this.female = false;
     this.changed();

@@ -9,6 +9,7 @@ const FPS = 10;
 
 const colors = {
   player: "#5aa9ff",
+  party: "#ff7ad9", // RO's pink party markers
   npc: "#ffa94d",
   portal: "#ff5a5a",
   self: "#ffffff",
@@ -154,6 +155,7 @@ export class Minimap {
     for (const [x, y] of v.portals) dot(ctx, toPx(x, y), 3 + pulse, colors.portal);
     for (const [x, y] of v.npcs) dot(ctx, toPx(x, y), 2.5, colors.npc);
     for (const [x, y] of v.players) dot(ctx, toPx(x, y), 2.5, colors.player);
+    for (const [x, y] of v.party) dot(ctx, toPx(x, y), 3, colors.party);
     if (v.self) arrow(ctx, toPx(v.self.x, v.self.y), v.self.dir);
   }
 

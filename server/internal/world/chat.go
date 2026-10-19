@@ -3,6 +3,7 @@ package world
 import (
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -93,10 +94,39 @@ func (w *World) Chat(id uint32, text string) error {
 			return
 		}
 		packet := proto.ChatMessage(p.id, proto.ChatPublic, p.Name, text)
+		if w.serverChat {
+			for _, other := range w.players {
+				other.out.Send(packet)
+			}
+			return
+		}
 		for _, other := range p.m.players {
 			if chebyshev(p.x, p.y, other.x, other.y) <= chatRange {
 				other.out.Send(packet)
 			}
+		}
+	})
+}
+
+// ServerChat reports whether public chat reaches the whole server.
+func (w *World) ServerChat() bool {
+	var on bool
+	w.do(func() { on = w.serverChat })
+	return on
+}
+
+// SetServerChat switches public chat between everyone online (true) and only
+// players nearby (false, RO's usual), and tells everyone.
+func (w *World) SetServerChat(on bool) error {
+	return w.do(func() {
+		w.serverChat = on
+		msg := "Chat is now local: only players nearby hear you."
+		if on {
+			msg = "Chat is now server-wide: everyone online hears you."
+		}
+		packet := proto.Message(msg)
+		for _, p := range w.players {
+			p.out.Send(packet)
 		}
 	})
 }
@@ -317,4 +347,28 @@ func (w *World) sendRoomSigns(p *Player) {
 			p.out.Send(r.signPacket())
 		}
 	}
+}
+
+// emoteCooldown keeps emoticons from being spammed (RO has a similar delay).
+const emoteCooldown = time.Second
+
+// Emote shows an emoticon over the player's head to everyone nearby.
+func (w *World) Emote(id uint32, kind int) error {
+	return w.do(func() {
+		p := w.players[id]
+		if p == nil || p.dead || kind < 0 || kind >= proto.Emotions {
+			return
+		}
+		now := time.Now()
+		if now.Before(p.nextEmote) {
+			return
+		}
+		p.nextEmote = now.Add(emoteCooldown)
+		packet := proto.Emotion(p.id, uint8(kind))
+		for _, other := range p.m.players {
+			if chebyshev(p.x, p.y, other.x, other.y) <= chatRange {
+				other.out.Send(packet)
+			}
+		}
+	})
 }

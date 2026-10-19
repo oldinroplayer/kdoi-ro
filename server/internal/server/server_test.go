@@ -368,10 +368,11 @@ func TestShopEquipAndStats(t *testing.T) {
 	alice.login("Alice", "pass1234")
 	alice.expectLogin(proto.LoginCreated)
 	alice.expectEnter()
-	if inv := alice.expectInventory(); len(inv) != 0 {
-		t.Fatalf("new character has items: %v", inv)
+	// New characters start wearing a Knife and a Cotton Shirt.
+	if inv := alice.expectInventory(); len(inv) != 2 || inv[1201].equip != 0x0002 || inv[2301].equip != 0x0010 {
+		t.Fatalf("new character's starting gear: %v", inv)
 	}
-	if s := alice.expectStatus(); s.zeny != 2000 || s.points != 48 || s.stats[0] != 1 {
+	if s := alice.expectStatus(); s.zeny != game.StartZeny || s.points != 48 || s.stats[0] != 1 {
 		t.Fatalf("starting status: %+v", s)
 	}
 
@@ -391,19 +392,18 @@ func TestShopEquipAndStats(t *testing.T) {
 	if len(inv) != 3 || inv[501].amount != 3 {
 		t.Fatalf("inventory after buy: %v", inv)
 	}
-	if s := alice.expectStatus(); s.zeny != 1790 || s.weight != 40+10+21 {
+	if s := alice.expectStatus(); s.zeny != game.StartZeny-210 || s.weight != 2*(40+10)+21 {
 		t.Fatalf("status after buy: %+v", s)
 	}
 
-	alice.send(proto.NewPacket(proto.OpShopBuy).U32(shopNpc).U16(1).U16(501).U16(100).Bytes())
+	alice.send(proto.NewPacket(proto.OpShopBuy).U32(shopNpc).U16(1).U16(501).U16(1000).Bytes())
 	if code := alice.expect(proto.OpShopResult).U8(); code != proto.ShopNoZeny {
 		t.Fatalf("expensive order result %d", code)
 	}
 
+	// Swap to the bought knife: the starting one comes off. (The look doesn't
+	// change, Knife for Knife, so no PlayerLook.)
 	alice.send(proto.NewPacket(proto.OpEquip).U16(uint16(inv[1201].index)).Bytes())
-	if r := alice.expect(proto.OpPlayerLook); r.U32() == 0 || r.U16() != 1201 {
-		t.Fatal("PlayerLook should show the knife in the weapon slot")
-	}
 	if inv := alice.expectInventory(); inv[1201].equip != 0x0002 {
 		t.Fatalf("knife not equipped: %v", inv)
 	}
@@ -429,7 +429,7 @@ func TestShopEquipAndStats(t *testing.T) {
 	if inv := again.expectInventory(); inv[1201].equip != 0x0002 || inv[501].amount != 3 {
 		t.Fatalf("inventory after relogin: %v", inv)
 	}
-	if s := again.expectStatus(); s.zeny != 1790 || s.stats[0] != 2 || s.atk2 != 17 {
+	if s := again.expectStatus(); s.zeny != game.StartZeny-210 || s.stats[0] != 2 || s.atk2 != 17 {
 		t.Fatalf("status after relogin: %+v", s)
 	}
 }
@@ -514,8 +514,8 @@ func TestKillMonsterGivesExpLootAndLevels(t *testing.T) {
 			}
 		}
 	}
-	if items != 1 {
-		t.Fatalf("expected the guaranteed Red Potion drop, inventory has %d entries", items)
+	if items != 1+len(game.StartEquipment) {
+		t.Fatalf("expected the starting gear plus the guaranteed Red Potion drop, inventory has %d entries", items)
 	}
 	if status.baseLevel != 2 || status.points != game.StartPoints+game.StatusPointsFor(2) {
 		t.Fatalf("after kill: %+v", status)

@@ -12,8 +12,10 @@ import { Hotbar } from "./ui/hotbar";
 import { DialogWindow } from "./ui/dialog";
 import { BuffBar } from "./ui/buffs";
 import { AutoBot } from "./bot";
+import { EMOTE_HOTKEYS } from "./emotes";
 import { DropAmountWindow } from "./ui/dropamount";
 import { HairstyleWindow } from "./ui/hairstyle";
+import { PartyInviteWindow, PartyWindow } from "./ui/party";
 import { DRAG_TYPE } from "./ui/common";
 import { ChatBox } from "./ui/chatbox";
 import { ChatRoomWindow, RoomPasswordWindow, RoomSettingsWindow, roomResultMessage } from "./ui/chatroom";
@@ -32,8 +34,10 @@ const form = $<HTMLFormElement>("login-form");
 const nameInput = $<HTMLInputElement>("name");
 const passwordInput = $<HTMLInputElement>("password");
 const serverInput = $<HTMLInputElement>("server");
-// A release build is served by the game server itself: connect back to it.
-if (!import.meta.env.DEV) {
+// A built client (release or dev target) is served by the game server itself:
+// connect back to it. Only Vite's dev server (which has import.meta.hot) talks
+// to a separately running server on :7000.
+if (!import.meta.hot) {
   serverInput.value = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 }
 const errorText = $("login-error");
@@ -106,6 +110,8 @@ const bot = new AutoBot(
 );
 const dropAmount = new DropAmountWindow(currentConn);
 const hairstyle = new HairstyleWindow(state, currentConn);
+const partyWindow = new PartyWindow(state, currentConn);
+const partyInvite = new PartyInviteWindow(currentConn);
 /** Whether we've already asked this session for a hairstyle. */
 let askedForHair = false;
 
@@ -206,10 +212,25 @@ function handleUiPacket(p: ServerPacket): boolean {
     case "chat":
       if (p.kind === 1) {
         chatRoom.message(p.name, p.text);
+      } else if (p.kind === 2) {
+        chatBox.add("party", `(Party) ${p.name} : ${p.text}`);
       } else {
         chatBox.add(p.name === state.name ? "self" : "public", `${p.name} : ${p.text}`);
         game?.showSpeech(p.id, `${p.name} : ${p.text}`);
       }
+      return true;
+    case "partyInfo":
+      state.party = p.party;
+      state.changed();
+      game?.setPartyMembers(p.party.members.map((m) => m.name));
+      return true;
+    case "partyLeft":
+      state.party = null;
+      state.changed();
+      game?.setPartyMembers([]);
+      return true;
+    case "partyInvited":
+      partyInvite.show(p.partyId, p.partyName, p.from);
       return true;
     case "whisperFrom":
       chatBox.whisperFrom(p.from, p.text);
@@ -291,6 +312,10 @@ $("menu-sit").addEventListener("click", () => {
   setMenuOpen(false);
   game?.toggleSit();
 });
+$("menu-party").addEventListener("click", () => {
+  setMenuOpen(false);
+  partyWindow.window.toggle();
+});
 $("menu-hair").addEventListener("click", () => {
   setMenuOpen(false);
   hairstyle.show();
@@ -334,10 +359,18 @@ const shortcuts: Record<string, () => void> = {
   KeyS: () => skillWindow.window.toggle(),
   KeyC: openRoomCreator,
   KeyB: () => bot.toggle(),
+  KeyZ: () => partyWindow.window.toggle(),
 };
 
 window.addEventListener("keydown", (ev) => {
   if (hud.hidden) return;
+  // Alt+1..Alt+0: emoticons.
+  const digit = /^Digit(\d)$/.exec(ev.code);
+  if (ev.altKey && digit) {
+    ev.preventDefault();
+    conn?.emote(EMOTE_HOTKEYS[(Number(digit[1]) + 9) % 10]);
+    return;
+  }
   if (ev.altKey && shortcuts[ev.code]) {
     ev.preventDefault();
     shortcuts[ev.code]();
@@ -467,7 +500,7 @@ form.addEventListener("submit", async (ev) => {
       hud.hidden = false;
       hudName.textContent = name;
       state.name = name;
-      setStatus(p.code === LoginCode.Created ? `Welcome, ${name}! Loading Morroc…` : "Loading…");
+      setStatus(p.code === LoginCode.Created ? `Welcome, ${name}! Loading the Archer Village…` : "Loading…");
       game = new Game(canvas, c, {
         setStatus,
         setPosition: (map, x, y) => (hudPos.textContent = `${map} (${x}, ${y})`),

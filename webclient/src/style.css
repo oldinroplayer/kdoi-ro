@@ -473,6 +473,76 @@ button.small {
   gap: 12px;
 }
 
+.chat-line.party {
+  color: #ffb3ec;
+}
+
+/* Party window. */
+.party-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.party-members {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.party-members li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-members li.offline {
+  opacity: 0.55;
+}
+
+.party-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b6b6b;
+}
+
+.party-members li.online .party-dot {
+  background: #6fdc6f;
+}
+
+.party-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.party-name {
+  font-weight: 600;
+}
+
+.party-detail {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-hp {
+  height: 12px;
+  margin-top: 2px;
+}
+
+.party-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
 /* Hairstyle window. */
 .hair-intro {
   margin: 0 0 10px;
@@ -1217,9 +1287,14 @@ button.item-cell:focus-visible {
   color: #ff6b5e;
 }
 
+/* Critical: the number on the client's red starburst (msg.spr), set as
+   --crit-burst once loaded; until then just the bigger yellow number. */
 .floater.crit span {
   color: #ffd84a;
   font-size: 22px;
+  padding: 22px 26px;
+  background: var(--crit-burst, none) center / contain no-repeat;
+  image-rendering: pixelated;
 }
 
 .floater.miss span {

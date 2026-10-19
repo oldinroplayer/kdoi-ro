@@ -3,7 +3,8 @@
 A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
 
 - Log in with a character name + password. An unknown name creates the
-  character (job Novice) at Morroc (156, 93); a known name checks the password.
+  character (job Novice) at the camp outside Payon Cave (pay_arche 46, 131);
+  a known name checks the password.
 - Players on the same map see each other appear, walk and leave.
 - Walking is server-authoritative: the client asks for a destination, the server
   finds an 8-direction path on the map's `.gat` walk grid and broadcasts it.
@@ -12,8 +13,12 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
   Alberta — each with every land exit it had (Prontera: castle north, fields
   south/west/east; Geffen: north/east/west; Payon: Archer Village north, forest
   south, east field, guild grounds west; Izlude and Alberta: one field each),
-  their 2004 monsters and outdoor shops. Kafra Employees save your respawn point
-  and teleport between cities for zeny (2004 destinations and prices).
+  their 2004 monsters and outdoor shops. Beyond them: prt_fild07 (Rockers, west
+  of Prontera's south field), moc_fild12 (south of Morroc) and Payon Cave
+  level 1 (pay_dun00: Zombies, Skeletons, Familiars, Poporings), entered from
+  the Archer Village north of Payon. A camp by the cave entrance has a Job
+  Guide and Weapon, Armor and Tool Dealers with Payon's stock (not in 2004 RO). Kafra Employees save your respawn point
+  and teleport between cities for free (2004 destinations; the prices are waived).
 - Each town's 2004 Weapon, Armor and Tool Dealers (indoors in RO, where
   KDoiRo doesn't go) sell their full stock: beside the Warper in the new cities,
   and through Morroc's dealers near the spawn. Arrows and Tool Dealer items
@@ -38,6 +43,25 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
   so the client asks on their first login; it can be changed any time from the
   menu. Stored in the `hair`, `hair_color` and `female` columns (schema
   version 3); characters from before genders are male.
+- Parties (RO 2004 style): a leader founds one by name, invites online players
+  (up to 12), and can kick members or switch EXP between each take and even
+  share (even share needs the online members within 10 base levels, and splits a
+  kill's EXP among members alive on that map). Members see each other's map,
+  position and HP (refreshed every second), chat with `%`, and share first pick
+  of each other's drops. Parties are saved (`parties`, `party_members`, schema
+  version 4); a leaving leader hands over to the next member.
+- Emoticons: the client's 47 (`/!`, `/?`, `/ho`... or Alt+1–0), shown to
+  everyone within 14 cells, at most one a second.
+- Server console: the terminal running the server takes commands —
+  `exp <name> <base> [job]` gives an online character EXP live (with level ups
+  and points), `zeny <name> <amount>` gives (or, negative, takes) zeny,
+  `warpall <map> <x> <y>` moves every online player there now and every saved
+  character there for their next login, `saveall <map> <x> <y>` sets everyone's
+  respawn point there, `exprate [rate]` shows or sets the monster EXP rate
+  live (`exprate 2` = x2, `1.5` works too; `-exp-rate 3` starts at x3),
+  `chatmode server|local` makes public chat reach everyone online or only
+  players within 14 cells (the default),
+  `who` lists who's online, `help` lists them all.
 - Maps sleep while no player is on them: their monsters stop thinking,
   wandering and fighting until someone arrives, and stay frozen where they
   were. A map stays awake for a minute after its last player leaves, so warping
@@ -45,7 +69,8 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
   running. (`internal/world/activity.go`)
 - Combat: click to auto-attack at your ASPD; hit/flee, crits, DEF and VIT
   reduce damage. HP/SP regenerate; Red Potions and herbs heal. At 0 HP you're
-  knocked out and can return to the save point (Morroc) with half HP.
+  knocked out and can return to the save point (their Kafra save, or the
+  Payon Cave camp) with half HP.
 - EXP is shared by damage dealt; level ups grant status points and refill HP/SP.
   Base level is capped at 30 for now (the EXP table stops there).
 - Shops buy anything you carry (except worn equipment) at half price.
@@ -66,6 +91,18 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
   Heal, Increase AGI, Blessing, Divine Protection; Mammonite (costs zeny),
   Discount, Overcharge, Enlarge Weight Limit; Double Attack, Improve Dodge,
   Envenom. Targeted skills walk into range first; buffs expire on a timer.
+  Increase AGI also makes walking 25% faster while it lasts (eAthena 2004).
+- Elements and races (2004 mob_db and attr_fix.txt): every monster has an
+  element and level, a race and a size. Attacks and skills hit with their
+  element (normal attacks, Bash, Mammonite and Double Strafe neutral; Magnum
+  Break and Fire Bolt fire, Cold Bolt water, Lightning Bolt wind, Envenom
+  poison), scaled by the element table: fire does 125% to the undead, neutral
+  25% to ghosts, and 0 where a monster is immune. Heal can be aimed at
+  undead-element monsters for half its amount as holy damage. Divine Protection
+  blocks 3 damage per level from undead and demon monsters.
+- Aggressive monsters (mode flag 4: Zombies, for example) attack the nearest
+  player within their view range; cast sensors (flag 16: Skeletons) go after a
+  player who starts casting nearby. Others still only fight back.
 - Chat: lines carry 14 cells (eAthena's AREA_SIZE); whispers reach anyone online
   by name. Chat rooms: a titled sign over the owner's head (public or with a
   password, 2–20 people); members chat privately, can't walk or fight, and the
@@ -140,6 +177,14 @@ Coordinates are map cells, `y = 0` at the south edge.
 | `0x0018` | RoomOwner | `name str` — hand the room to another member (owner only) |
 | `0x0019` | PickUp | `floorItemId u32` — walk over and pick up an item on the ground |
 | `0x001A` | DropItem | `index u16`, `amount u16` — drop inventory items at your feet |
+| `0x001C` | Emote | `type u8` (0–46) |
+| `0x001D` | PartyCreate | `name str` |
+| `0x001E` | PartyInvite | `name str` (leader only) |
+| `0x001F` | PartyReply | `partyId u32`, `accept u8` |
+| `0x0020` | PartyLeave | — |
+| `0x0021` | PartyKick | `name str` (leader only) |
+| `0x0022` | PartyChat | `text str` |
+| `0x0023` | PartyEXP | `even u8` (leader only) |
 | `0x001B` | SetAppearance | `style u8` (1–19), `color u8` (0–8), `female u8` — change hairstyle, hair colour and gender; everyone on the map gets a PlayerLook |
 | `0x000F` | UseSkill | `skillId u16`, `level u16` (0 = highest learned), `targetId u32` (ignored for self skills) |
 | `0x000D` | Turn | `dir u8` — face a direction without moving (0 N, 1 NW … 7 NE); ignored while walking |
@@ -178,7 +223,7 @@ unreachable within 32 steps.
 | `0x8019` | NpcDialog | `npcId u32`, `name str`, `text` (`u16` length + UTF-8, may contain newlines), `count u8`, then `count` × `option str` (0 options = just Close) |
 | `0x801A` | PlayerJob | `id u32`, `job u16` — a player changed job (new body sprite) |
 | `0x801B` | Buff | `id u32`, `skillId u16`, `level u8`, `ms u32` — a buff started (or ended, `ms` 0); sent only to the buffed player |
-| `0x801C` | ChatMessage | `id u32` (speaker), `kind u8` (0 out loud, 1 in a chat room), `name str`, `text str` |
+| `0x801C` | ChatMessage | `id u32` (speaker), `kind u8` (0 out loud, 1 in a chat room, 2 to the party), `name str`, `text str` |
 | `0x801D` | WhisperFrom | `from str`, `text str` |
 | `0x801E` | WhisperResult | `code u8` (0 delivered, 1 not online, 2 yourself), `to str` |
 | `0x801F` | RoomSign | `roomId u32`, `ownerId u32`, `title str`, `members u8`, `limit u8`, `public u8` — show or update a room's sign |
@@ -191,6 +236,11 @@ unreachable within 32 steps.
 | `0x8026` | FloorItem | `id u32`, `itemId u16`, `amount u16`, `x u16`, `y u16`, `subX u8`, `subY u8` (0–15 within the cell), `dropped u8` (1 = just fell) |
 | `0x8027` | FloorItemGone | `id u32` — picked up or expired |
 | `0x8028` | PlayerPickUp | `id u32` — play a player's pick-up motion |
+| `0x8029` | Emotion | `id u32`, `type u8` — an emoticon over a unit's head |
+| `0x802A` | PartyInfo | `partyId u32`, `name str`, `leader str`, `evenExp u8`, `count u8`, then `count` × (`name str`, `online u8`, `map str`, `x u16`, `y u16`, `hp u32`, `maxHp u32`, `job u16`, `baseLevel u16`; offline members have only a name) |
+| `0x802B` | PartyInvited | `partyId u32`, `partyName str`, `from str` |
+| `0x802C` | PartyLeft | — you're no longer in a party |
+| `0x802D` | PlayerSpeed | `id u32`, `speed u16` (ms per straight cell) — a player's walk speed changed (Increase AGI: 25% faster while it lasts) |
 | `0x8018` | SkillUse | `src u32`, `target u32`, `skillId u16`, `level u8` — a skill went off (its effect follows, e.g. Heal) |
 
 LoginResult codes: `0` logged in, `1` character created, `2` wrong password,

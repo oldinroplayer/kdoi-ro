@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { fetchData } from "../assets";
 import { parseGat, type Gat } from "../formats/gat";
-import { parseGnd } from "../formats/gnd";
+import { parseGnd, type Gnd } from "../formats/gnd";
 import { parseRsw, type Rsw, type RswSound } from "../formats/rsw";
 import { buildGround } from "./ground";
 import type { SceneLight } from "./material";
@@ -20,7 +20,16 @@ export interface MapView {
   ground: THREE.Mesh[];
   /** Ambient sounds with positions in RO space (same units as cells × CELL). */
   sounds: (RswSound & { x: number; z: number })[];
+  /** Placed effects (torch fire...) with positions in RO space. */
+  effects: { id: number; x: number; y: number; z: number }[];
   update(timeMs: number): void;
+  /** The scene light every map material uses. */
+  light: SceneLight;
+  /** The map's fog colour and strength from data/fogparametertable.txt, or null. */
+  fog: MapFog | null;
+  /** The light falling on a cell (map light, the ground's baked shadow and
+   * coloured light there), for shading sprites standing on it. */
+  lightAt(x: number, y: number, out: THREE.Color): THREE.Color;
   dispose(): void;
 }
 
@@ -44,6 +53,8 @@ export async function loadMap(name: string, onProgress?: (msg: string) => void):
   const gnd = parseGnd(gndBuf);
   const rsw = parseRsw(rswBuf);
   const light = sceneLight(rsw);
+  const fog = (await loadFogTable()).get(name.toLowerCase()) ?? null;
+  const cellLight = buildCellLight(gnd, light);
 
   const root = new THREE.Group();
   root.name = `map:${name}`;
@@ -65,6 +76,12 @@ export async function loadMap(name: string, onProgress?: (msg: string) => void):
   root.add(water.mesh);
 
   const sounds = rsw.sounds.map((s) => ({ ...s, x: s.position[0] + center[0], z: s.position[2] + center[1] }));
+  const effects = rsw.effects.map((e) => ({
+    id: e.id,
+    x: e.position[0] + center[0],
+    y: e.position[1],
+    z: e.position[2] + center[1],
+  }));
 
   return {
     name,
@@ -72,7 +89,11 @@ export async function loadMap(name: string, onProgress?: (msg: string) => void):
     root,
     ground,
     sounds,
+    effects,
     update: water.update,
+    light,
+    fog,
+    lightAt: cellLight,
     dispose() {
       root.traverse((o) => {
         if (o instanceof THREE.Mesh) o.geometry.dispose();
@@ -91,6 +112,85 @@ function sceneLight(rsw: Rsw): SceneLight {
     direction: roToWorld(...ro).normalize(),
     ambient: new THREE.Color(...rsw.light.ambient),
     diffuse: new THREE.Color(...rsw.light.diffuse),
+  };
+}
+
+/** A map's entry in data/fogparametertable.txt. */
+export interface MapFog {
+  color: THREE.Color;
+  /** How strongly the colour covers the scene (0.3 in Payon Cave). */
+  strength: number;
+}
+
+let fogTable: Promise<Map<string, MapFog>> | null = null;
+
+/** Parses the client's fog table: "map.rsw#", start#, end#, 0xAARRGGBB#, strength# per map. */
+function loadFogTable(): Promise<Map<string, MapFog>> {
+  fogTable ??= fetchData("fogparametertable.txt")
+    .then((buf) => {
+      const fields = new TextDecoder("euc-kr").decode(buf).split("#").map((f) => f.trim()).filter(Boolean);
+      const out = new Map<string, MapFog>();
+      for (let i = 0; i + 4 < fields.length; i += 5) {
+        const argb = parseInt(fields[i + 3], 16);
+        out.set(fields[i].toLowerCase().replace(/\.rsw$/, ""), {
+          color: new THREE.Color().setHex(argb & 0xffffff, THREE.SRGBColorSpace),
+          strength: Number(fields[i + 4]),
+        });
+      }
+      return out;
+    })
+    .catch((err) => {
+      console.warn("fog table missing", err);
+      return new Map();
+    });
+  return fogTable;
+}
+
+/**
+ * Light per GAT cell for sprites, as RO shades characters: the map's ambient
+ * plus some diffuse light, dimmed by the ground's baked shadow under them and
+ * brightened by its baked coloured light. Each GND cube covers 2x2 cells.
+ */
+function buildCellLight(gnd: Gnd, light: SceneLight) {
+  const { cellW, cellH, data } = gnd.lightmap;
+  const per = cellW * cellH;
+  const shadow = new Float32Array(gnd.width * gnd.height).fill(1);
+  const glow = new Float32Array(gnd.width * gnd.height * 3);
+  gnd.cubes.forEach((cube, i) => {
+    if (cube.top < 0) return;
+    const lm = gnd.surfaces[cube.top].lightmap;
+    if (lm < 0 || lm >= gnd.lightmap.count) return;
+    // Average the inner texels (the outer ring is padding).
+    let a = 0, r = 0, g = 0, b = 0, n = 0;
+    for (let ty = 1; ty < cellH - 1; ty++) {
+      for (let tx = 1; tx < cellW - 1; tx++) {
+        const j = ty * cellW + tx;
+        a += data[lm * per * 4 + j];
+        r += data[lm * per * 4 + per + j * 3];
+        g += data[lm * per * 4 + per + j * 3 + 1];
+        b += data[lm * per * 4 + per + j * 3 + 2];
+        n++;
+      }
+    }
+    shadow[i] = a / n / 255;
+    glow.set([r / n / 255, g / n / 255, b / n / 255], i * 3);
+  });
+  // Sprites face the camera, so they get about half the directional light.
+  const base = light.ambient.clone().add(light.diffuse.clone().multiplyScalar(0.5));
+  base.r = Math.min(base.r, 1);
+  base.g = Math.min(base.g, 1);
+  base.b = Math.min(base.b, 1);
+  return (x: number, y: number, out: THREE.Color): THREE.Color => {
+    const cx = Math.min(Math.max(Math.floor(x / 2), 0), gnd.width - 1);
+    const cy = Math.min(Math.max(Math.floor(y / 2), 0), gnd.height - 1);
+    const i = cy * gnd.width + cx;
+    const s = shadow[i];
+    return out.setRGB(
+      Math.min(base.r * s + glow[i * 3], 1),
+      Math.min(base.g * s + glow[i * 3 + 1], 1),
+      Math.min(base.b * s + glow[i * 3 + 2], 1),
+      THREE.LinearSRGBColorSpace,
+    );
   };
 }
 

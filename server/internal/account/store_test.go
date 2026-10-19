@@ -173,3 +173,62 @@ func TestHairIsSaved(t *testing.T) {
 		t.Fatalf("appearance after reopen: %d/%d female=%v err %v", got.Hair, got.HairColor, got.Female, err)
 	}
 }
+
+func TestParties(t *testing.T) {
+	s, path := openTemp(t)
+	if err := s.SaveParty(Party{ID: 3, Name: "Porings", Leader: "Alice", Members: []string{"Alice", "Bob"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveParty(Party{ID: 3, Name: "Porings", Leader: "Bob", Members: []string{"Bob", "Carol"}, EvenEXP: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveParty(Party{ID: 4, Name: "Gone", Leader: "Dan", Members: []string{"Dan"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteParty(4); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	got, err := s2.Parties()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("parties: %+v err %v", got, err)
+	}
+	if p := got[0]; p.ID != 3 || p.Leader != "Bob" || !p.EvenEXP || len(p.Members) != 2 || p.Members[1] != "Carol" {
+		t.Fatalf("party after reopen: %+v", p)
+	}
+}
+
+func TestRelocateAll(t *testing.T) {
+	s, _ := openTemp(t)
+	for _, name := range []string{"Alpha", "Bravo"} {
+		if _, _, err := s.Authenticate(name, "secret", game.NewChar("morocc", 1, 1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.RelocateAll("payon", 100, 100); err != nil || n != 2 {
+		t.Fatalf("relocate: %d %v", n, err)
+	}
+	c, _, err := s.Authenticate("Bravo", "secret", game.CharData{})
+	if err != nil || c.Map != "payon" || c.X != 100 || c.Y != 100 {
+		t.Fatalf("after relocate: %s (%d, %d) %v", c.Map, c.X, c.Y, err)
+	}
+}
+
+func TestSaveAllStored(t *testing.T) {
+	s, _ := openTemp(t)
+	if _, _, err := s.Authenticate("Respawner", "secret", game.NewChar("morocc", 1, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.SaveAll("pay_arche", 46, 131); err != nil || n != 1 {
+		t.Fatalf("saveall: %d %v", n, err)
+	}
+	c, _, err := s.Authenticate("Respawner", "secret", game.CharData{})
+	if err != nil || c.Save != (game.SavePoint{Map: "pay_arche", X: 46, Y: 131}) || c.Map != "morocc" {
+		t.Fatalf("after saveall: save %+v, map %s, err %v", c.Save, c.Map, err)
+	}
+}

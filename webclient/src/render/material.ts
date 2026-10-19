@@ -21,7 +21,8 @@ void main() {
   vLmUv = lmuv;
   vTint = tint;
   vNormal = normalize(mat3(modelMatrix) * normal);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
 }
 `;
 

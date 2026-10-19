@@ -35,10 +35,13 @@ const (
 	kafraTeleportMenu
 )
 
+// teleportsFrom lists a Kafra's destinations on loaded maps. The teleport
+// service is free in KDoiRo: the 2004 prices stay in the data but are waived.
 func (w *World) teleportsFrom(n *NPC) []Teleport {
 	var out []Teleport
 	for _, t := range n.Kafra.Teleports {
 		if _, ok := w.maps[t.Map]; ok {
+			t.Price = 0
 			out = append(out, t)
 		}
 	}
@@ -72,7 +75,11 @@ func (w *World) kafraReply(p *Player, n *NPC, choice int) {
 	case choice == 1 && len(teleports) > 0:
 		options := make([]string, 0, len(teleports)+1)
 		for _, t := range teleports {
-			options = append(options, fmt.Sprintf("%s -> %d z", t.Name, t.Price))
+			if t.Price > 0 {
+				options = append(options, fmt.Sprintf("%s -> %d z", t.Name, t.Price))
+			} else {
+				options = append(options, t.Name)
+			}
 		}
 		options = append(options, "Cancel")
 		p.dialog, p.dialogMenu = n.ID, kafraTeleportMenu

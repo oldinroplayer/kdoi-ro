@@ -305,6 +305,75 @@ export class LightColumn implements Effect {
   }
 }
 
+/**
+ * RO's rising light cylinder: a ring texture (texture/effect/ring_*.tga, a
+ * strip of light streaks, solid at the bottom and spiky at the top) wrapped
+ * around the unit. It shoots up, turns, and fades. Two layers turning opposite
+ * ways give the streaks depth. Used for Increase AGI with ring_blue.
+ */
+export class RingCylinder implements Effect {
+  readonly object = new THREE.Group();
+  private readonly start = performance.now();
+  private readonly layers: { mesh: THREE.Mesh; spin: number }[] = [];
+
+  constructor(
+    texture: THREE.Texture,
+    private readonly anchor: Anchor,
+    private readonly ms = 1200,
+  ) {
+    const height = 95 * SPRITE_SCALE;
+    for (const [radius, spin, repeats] of [
+      [CELL * 0.75, 1.6, 3],
+      [CELL * 0.55, -2.2, 2],
+    ] as const) {
+      const geo = new THREE.CylinderGeometry(radius, radius * 0.9, height, 28, 1, true);
+      geo.translate(0, height / 2, 0);
+      const tex = texture.clone();
+      // Image top (spikes) at the cylinder's top: flip v, wrap around a few times.
+      tex.repeat.set(repeats, -1);
+      tex.offset.set(0, 1);
+      tex.needsUpdate = true;
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      );
+      mesh.renderOrder = 4;
+      this.layers.push({ mesh, spin });
+      this.object.add(mesh);
+    }
+  }
+
+  update(now: number): boolean {
+    const t = (now - this.start) / this.ms;
+    if (t >= 1) return false;
+    this.object.position.copy(this.anchor());
+    // Shoot up fast, then hold while fading.
+    const rise = 1 - Math.pow(1 - Math.min(1, t / 0.3), 3);
+    const fade = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
+    for (const { mesh, spin } of this.layers) {
+      mesh.scale.set(1, Math.max(rise, 0.01), 1);
+      mesh.rotation.y = spin * t * Math.PI;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = fade;
+    }
+    return true;
+  }
+
+  dispose(): void {
+    for (const { mesh } of this.layers) {
+      mesh.geometry.dispose();
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.map?.dispose(); // the clone; the loaded texture stays cached
+      mat.dispose();
+    }
+  }
+}
+
 /** An image (e.g. texture/effect/agi_up.bmp) floating up from a unit's head. */
 export class RisingImage implements Effect {
   readonly object: THREE.Mesh;
@@ -344,7 +413,8 @@ export class RisingImage implements Effect {
   }
 }
 
-/** Plays an effect sprite's first action once (e.g. sprite/이팩트/축복). */
+/** Plays an effect sprite's first action once (e.g. sprite/이팩트/축복), or
+ * over and over for effects placed on a map (torch fire). */
 export class SpriteEffect implements Effect {
   readonly object: THREE.Mesh;
   private readonly start = performance.now();
@@ -352,23 +422,31 @@ export class SpriteEffect implements Effect {
   private readonly frameMs: number;
   private readonly frames: number;
 
+  /** action picks one of the sprite's actions (e.g. an emoticon); 0 by default. */
   constructor(
     assets: Awaited<ReturnType<typeof loadEffectAssets>>,
     private readonly anchor: Anchor,
+    private readonly action = 0,
+    private readonly loop = false,
   ) {
     this.sprite = new CharacterSprite(assets);
     this.object = this.sprite.object;
     this.object.renderOrder = 7;
     const mat = this.object.material as THREE.MeshBasicMaterial;
-    mat.depthTest = false;
-    this.frameMs = this.sprite.frameDelay(0);
-    this.frames = this.sprite.frameCount(0);
+    // A looping map effect sits in the scenery, so walls and pillars hide it.
+    mat.depthTest = loop;
+    ({ delay: this.frameMs, frames: this.frames } = this.sprite.actionTiming(action));
   }
 
   update(now: number, camera: THREE.Camera): boolean {
-    const frame = Math.floor((now - this.start) / this.frameMs);
-    if (frame >= this.frames) return false;
-    this.sprite.draw(0, 0, frame);
+    if (this.frames === 0) return this.loop;
+    let frame = Math.floor((now - this.start) / this.frameMs);
+    if (frame >= this.frames) {
+      if (!this.loop) return false;
+      frame %= this.frames;
+    }
+    // draw() addresses actions as group * 8 + direction.
+    this.sprite.draw(this.action >> 3, this.action & 7, frame);
     this.object.position.copy(this.anchor());
     this.object.quaternion.copy(camera.quaternion);
     return true;

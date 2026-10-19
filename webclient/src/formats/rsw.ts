@@ -18,11 +18,18 @@ export interface RswSound {
   cycle: number;
 }
 
+/** An effect placed on the map, by the client's effect ID (47 = torch fire). */
+export interface RswEffect {
+  id: number;
+  position: [number, number, number];
+}
+
 export interface Rsw {
   water: { level: number; type: number; waveHeight: number; waveSpeed: number; wavePitch: number; animSpeed: number };
   light: { longitude: number; latitude: number; diffuse: [number, number, number]; ambient: [number, number, number]; opacity: number };
   models: RswModel[];
   sounds: RswSound[];
+  effects: RswEffect[];
 }
 
 export function parseRsw(buf: ArrayBuffer): Rsw {
@@ -55,6 +62,7 @@ export function parseRsw(buf: ArrayBuffer): Rsw {
 
   const models: RswModel[] = [];
   const sounds: RswSound[] = [];
+  const effects: RswEffect[] = [];
   const count = r.i32();
   for (let i = 0; i < count; i++) {
     const type = r.i32();
@@ -83,12 +91,18 @@ export function parseRsw(buf: ArrayBuffer): Rsw {
         sounds.push({ file, position, volume, range, cycle });
         break;
       }
-      case 4: // effect: name, pos, id, delay, params
-        r.skip(80 + 12 + 4 + 4 + 16);
+      case 4: {
+        // Placed effect (torch fire, chimney smoke...): name, pos, id, delay, params.
+        r.str(80); // name
+        const position = r.vec3();
+        const id = r.i32();
+        r.skip(4 + 16); // delay, params
+        effects.push({ id, position });
         break;
+      }
       default:
         throw new Error(`unknown RSW object type ${type} at index ${i}`);
     }
   }
-  return { water, light, models, sounds };
+  return { water, light, models, sounds, effects };
 }

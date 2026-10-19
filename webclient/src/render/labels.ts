@@ -101,6 +101,11 @@ export class FloatingTexts {
     canvas.after(this.root);
   }
 
+  /** The image critical hits' numbers sit on (a data URL), once loaded. */
+  setCritBurst(url: string): void {
+    this.root.style.setProperty("--crit-burst", `url("${url}")`);
+  }
+
   /** kind: damage, crit, hurt (damage to us), miss, heal, level, "level job". */
   spawn(text: string, kind: string, anchor: () => THREE.Vector3): void {
     const el = document.createElement("div");

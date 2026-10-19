@@ -43,22 +43,40 @@ func (c *CharData) skillRegenSP(maxSP int) int {
 	return 3*lv + maxSP*lv/500
 }
 
-// SkillAttackMob resolves a physical attack skill: damage is pct% of a normal
-// hit plus flat, and accuracy gets hitBonus percent.
-func (c *CharData) SkillAttackMob(m *MobDef, r Rand, pct, flat, hitBonus int) Hit {
-	return c.attackMob(m, r, pct, flat, hitBonus)
+// SkillAttackMob resolves a physical attack skill of an element: damage is
+// pct% of a normal hit plus flat, and accuracy gets hitBonus percent.
+func (c *CharData) SkillAttackMob(m *MobDef, r Rand, pct, flat, hitBonus, element int) Hit {
+	return c.attackMob(m, r, pct, flat, hitBonus, element)
 }
 
-// MagicAttackMob is one hit of a bolt: MATK reduced by the target's MDEF
-// (percent) and INT, at least 1.
-func (c *CharData) MagicAttackMob(m *MobDef, r Rand) Hit {
+// MagicAttackMob is one hit of a bolt of an element: MATK reduced by the
+// target's MDEF (percent) and INT, at least 1, then the element's effect.
+func (c *CharData) MagicAttackMob(m *MobDef, r Rand, element int) Hit {
 	if m.Plant {
 		return Hit{Damage: 1}
 	}
 	d := c.Derive()
 	dmg := between(r, d.MatkMin, d.MatkMax)
 	dmg = dmg*(100-min(m.Mdef, 99))/100 - m.Stats[INT]
-	return Hit{Damage: max(dmg, 1)}
+	return Hit{Damage: applyElement(max(dmg, 1), m.ElementFix(element))}
+}
+
+// HealDamage is what Heal does to an undead-element monster: half the heal,
+// as holy damage (RO pre-renewal). 0 for anything not undead.
+func (c *CharData) HealDamage(m *MobDef, level int) int {
+	if m.Element != ElemUndead {
+		return 0
+	}
+	return applyElement(c.HealAmount(level)/2, m.ElementFix(ElemHoly))
+}
+
+// DivineProtection is the damage Divine Protection blocks from undead and
+// demon monsters: 3 per level (RO pre-renewal).
+func (c *CharData) DivineProtection(m *MobDef) int {
+	if m.Race != RaceUndead && m.Race != RaceDemon {
+		return 0
+	}
+	return 3 * c.SkillLevel(SkillDivineProt)
 }
 
 // HealAmount is Heal's pre-renewal formula: (BaseLv + INT) / 8 * (4 + 8 * level).

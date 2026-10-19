@@ -14,6 +14,14 @@ var generatedMobs = []*MobDef{
 		Drops: []Drop{{909, 7000}, {1202, 100}, {938, 400}, {512, 1000}, {713, 1500}, {741, 5}, {619, 20}, {4001, 20}},
 	},
 	{
+		ID: 1005, Name: "Familiar", Sprite: "farmiliar", Level: 8, HP: 155,
+		BaseExp: 28, JobExp: 15, Atk1: 20, Atk2: 28, Def: 0, Mdef: 0,
+		Stats: [NumStats]int{STR: 1, AGI: 12, VIT: 8, INT: 5, DEX: 28}, Range: 1, ChaseRange: 12,
+		WalkSpeed: 150, AttackDelay: 1276, AttackMotion: 576, DamageMotion: 384,
+		Mobile: true, Fights: true,
+		Drops: []Drop{{913, 5500}, {1105, 20}, {2209, 15}, {601, 50}, {514, 100}, {507, 700}, {645, 50}, {4020, 1}},
+	},
+	{
 		ID: 1007, Name: "Fabre", Sprite: "fabre", Level: 2, HP: 63,
 		BaseExp: 3, JobExp: 2, Atk1: 7, Atk2: 10, Def: 0, Mdef: 0,
 		Stats: [NumStats]int{STR: 1, AGI: 2, VIT: 4, DEX: 7, LUK: 5}, Range: 1, ChaseRange: 12,
@@ -59,6 +67,14 @@ var generatedMobs = []*MobDef{
 		WalkSpeed: 200, AttackDelay: 1872, AttackMotion: 672, DamageMotion: 288,
 		Mobile: true, Fights: true,
 		Drops: []Drop{{921, 5000}, {507, 800}, {510, 50}, {743, 5}, {2220, 40}, {921, 5}, {4022, 5}},
+	},
+	{
+		ID: 1015, Name: "Zombie", Sprite: "zombie", Level: 15, HP: 534,
+		BaseExp: 50, JobExp: 33, Atk1: 67, Atk2: 79, Def: 0, Mdef: 10,
+		Stats: [NumStats]int{STR: 1, AGI: 8, VIT: 7, DEX: 15}, Range: 1, ChaseRange: 12,
+		WalkSpeed: 400, AttackDelay: 2612, AttackMotion: 912, DamageMotion: 288,
+		Mobile: true, Fights: true,
+		Drops: []Drop{{957, 5500}, {724, 5}, {938, 1000}, {958, 50}, {727, 55}, {4038, 1}},
 	},
 	{
 		ID: 1031, Name: "Poporing", Sprite: "poporing", Level: 14, HP: 344,
@@ -121,6 +137,22 @@ var generatedMobs = []*MobDef{
 		WalkSpeed: 200, AttackDelay: 1456, AttackMotion: 456, DamageMotion: 336,
 		Mobile: true, Fights: true,
 		Drops: []Drop{{705, 6500}, {949, 1000}, {2262, 4}, {1102, 100}, {512, 600}, {515, 1100}, {622, 20}, {4006, 15}},
+	},
+	{
+		ID: 1076, Name: "Skeleton", Sprite: "skeleton", Level: 10, HP: 234,
+		BaseExp: 18, JobExp: 14, Atk1: 39, Atk2: 47, Def: 10, Mdef: 5,
+		Stats: [NumStats]int{STR: 1, AGI: 5, VIT: 10, DEX: 12}, Range: 1, ChaseRange: 12,
+		WalkSpeed: 200, AttackDelay: 2228, AttackMotion: 528, DamageMotion: 576,
+		Mobile: true, Fights: true,
+		Drops: []Drop{{1010, 90}, {932, 800}, {1505, 80}, {909, 3000}, {507, 850}, {2609, 30}, {4025, 7}},
+	},
+	{
+		ID: 1078, Name: "Red Plant", Sprite: "red_plant", Level: 1, HP: 10,
+		BaseExp: 0, JobExp: 0, Atk1: 1, Atk2: 2, Def: 100, Mdef: 99,
+		Stats: [NumStats]int{}, Range: 1, ChaseRange: 12,
+		WalkSpeed: 2000, AttackDelay: 1, AttackMotion: 1, DamageMotion: 1,
+		Plant: true,
+		Drops: []Drop{{507, 5500}, {712, 1000}, {711, 1000}, {905, 500}, {906, 300}, {914, 500}, {708, 50}, {2269, 2}},
 	},
 	{
 		ID: 1079, Name: "Blue Plant", Sprite: "blue_plant", Level: 1, HP: 10,

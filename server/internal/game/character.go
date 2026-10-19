@@ -7,7 +7,7 @@ const (
 	MaxStack     = 30000 // per stackable entry
 	MaxZeny      = 1_000_000_000
 	MaxStat      = 99
-	StartZeny    = 2000
+	StartZeny    = 20000
 	StartPoints  = 48 // rAthena start_status_points
 )
 
@@ -106,6 +106,18 @@ func NewChar(mapName string, x, y int) CharData {
 	c := CharData{Job: 0, Map: mapName, X: x, Y: y}
 	c.FillDefaults()
 	return c
+}
+
+// StartEquipment is what a new player's character starts wearing: a Knife
+// and a Cotton Shirt.
+var StartEquipment = []int{1201, 2301}
+
+// WearStartEquipment gives a brand-new character StartEquipment, worn.
+func (c *CharData) WearStartEquipment() {
+	for _, id := range StartEquipment {
+		c.add(id, 1)
+		c.Inventory[len(c.Inventory)-1].Equip = Items[id].Slot
+	}
 }
 
 // ClampVitals keeps HP/SP within their maximums; HP 0 (characters saved before

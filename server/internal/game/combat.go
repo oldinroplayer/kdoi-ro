@@ -27,12 +27,14 @@ func hitChance(hit, flee int) int {
 
 // AttackMob resolves a player's melee attack on a monster.
 func (c *CharData) AttackMob(m *MobDef, r Rand) Hit {
-	return c.attackMob(m, r, 100, 0, 0)
+	// No weapon in the item list has an element yet: normal attacks are neutral.
+	return c.attackMob(m, r, 100, 0, 0, ElemNeutral)
 }
 
 // attackMob is a physical hit scaled to pct% plus flat damage, with hitBonus
-// added to the hit chance (skills like Bash are more accurate).
-func (c *CharData) attackMob(m *MobDef, r Rand, pct, flat, hitBonus int) Hit {
+// added to the hit chance (skills like Bash are more accurate), then scaled by
+// how the attack's element fares against the monster's.
+func (c *CharData) attackMob(m *MobDef, r Rand, pct, flat, hitBonus, element int) Hit {
 	d := c.Derive()
 	if m.Plant {
 		return Hit{Damage: 1}
@@ -57,7 +59,7 @@ func (c *CharData) attackMob(m *MobDef, r Rand, pct, flat, hitBonus int) Hit {
 		dmg = dmg*(100-min(m.Def, 99))/100 - m.Stats[VIT]
 	}
 	dmg = dmg*pct/100 + flat
-	return Hit{Damage: max(dmg, 1), Crit: crit}
+	return Hit{Damage: applyElement(max(dmg, 1), m.ElementFix(element)), Crit: crit}
 }
 
 // AttackPlayer resolves a monster's attack on a player.
@@ -67,7 +69,7 @@ func (m *MobDef) AttackPlayer(c *CharData, r Rand) Hit {
 		return Hit{Miss: true}
 	}
 	dmg := between(r, m.Atk1, m.Atk2)
-	dmg = dmg*(100-min(d.Def, 99))/100 - d.Def2
+	dmg = dmg*(100-min(d.Def, 99))/100 - d.Def2 - c.DivineProtection(m)
 	return Hit{Damage: max(dmg, 1)}
 }
 

@@ -65,6 +65,11 @@ type Config struct {
 	SavePoint Location
 	// Seed makes combat rolls reproducible; 0 picks a random seed.
 	Seed uint64
+	// ExpRate multiplies the EXP monsters give (2 = "x2"); 0 means x1.
+	ExpRate float64
+	// Parties saved from earlier runs, and where to save changes (nil: don't).
+	Parties    []PartyRecord
+	PartyStore PartyStore
 }
 
 type Player struct {
@@ -81,6 +86,8 @@ type Player struct {
 	room        *chatRoom // chat room the player is in (can't walk or fight)
 	pickup      uint32    // floor item the player is walking over to pick up
 	dialogMenu  int       // which menu of the NPC's dialog the player is in
+	nextEmote   time.Time // no emoticons before this (cooldown)
+	partyInvite uint32    // party that invited the player, awaiting an answer
 	buffEnds    map[int]time.Time
 	dialog      uint32    // NPC whose question the player is answering
 	nextSkill   time.Time // after-cast delay: no skills before this
@@ -136,16 +143,27 @@ type NPC struct {
 }
 
 type World struct {
-	maps      map[string]*mapInstance // read-only after New
-	npcs      map[uint32]*NPC         // read-only after New
-	players   map[uint32]*Player
-	monsters  map[uint32]*Monster
-	online    map[string]uint32 // lowercase name -> id
-	rooms     map[uint32]*chatRoom
-	nextID    uint32
-	savePoint Location
-	rng       *rand.Rand
-	respawns  []respawn
+	maps     map[string]*mapInstance // read-only after New
+	npcs     map[uint32]*NPC         // read-only after New
+	players  map[uint32]*Player
+	monsters map[uint32]*Monster
+	online   map[string]uint32 // lowercase name -> id
+	rooms    map[uint32]*chatRoom
+	// Parties by ID, and each member's party by lowercase character name.
+	parties         map[uint32]*party
+	partyByMember   map[string]uint32
+	nextPartyID     uint32
+	partyStore      PartyStore
+	nextPartyStatus time.Time
+	nextID          uint32
+	savePoint       Location
+	rng             *rand.Rand
+	respawns        []respawn
+	// expRate is the monster EXP multiplier in percent (100 = x1).
+	expRate int
+	// serverChat sends public chat to every player online instead of only
+	// those nearby (the console's chatmode).
+	serverChat bool
 	// nextFloorSweep is when expired floor items are next cleared.
 	nextFloorSweep time.Time
 
@@ -160,17 +178,20 @@ func New(cfg Config) (*World, error) {
 		seed = rand.Uint64()
 	}
 	w := &World{
-		maps:      map[string]*mapInstance{},
-		npcs:      map[uint32]*NPC{},
-		players:   map[uint32]*Player{},
-		monsters:  map[uint32]*Monster{},
-		online:    map[string]uint32{},
-		rooms:     map[uint32]*chatRoom{},
-		nextID:    100000, // keep unit IDs clear of NPC IDs and small reserved values
-		savePoint: cfg.SavePoint,
-		rng:       rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)),
-		cmds:      make(chan func(), 256),
-		stopped:   make(chan struct{}),
+		maps:          map[string]*mapInstance{},
+		npcs:          map[uint32]*NPC{},
+		players:       map[uint32]*Player{},
+		monsters:      map[uint32]*Monster{},
+		online:        map[string]uint32{},
+		rooms:         map[uint32]*chatRoom{},
+		parties:       map[uint32]*party{},
+		partyByMember: map[string]uint32{},
+		partyStore:    cfg.PartyStore,
+		nextID:        100000, // keep unit IDs clear of NPC IDs and small reserved values
+		savePoint:     cfg.SavePoint,
+		rng:           rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)),
+		cmds:          make(chan func(), 256),
+		stopped:       make(chan struct{}),
 	}
 	for name, grid := range cfg.Maps {
 		w.maps[name] = &mapInstance{
@@ -181,6 +202,23 @@ func New(cfg Config) (*World, error) {
 	}
 	if _, ok := w.maps[cfg.SavePoint.Map]; !ok {
 		return nil, fmt.Errorf("save point map %q not loaded", cfg.SavePoint.Map)
+	}
+	rate := cfg.ExpRate
+	if rate == 0 {
+		rate = 1
+	}
+	pct, err := expRatePercent(rate)
+	if err != nil {
+		return nil, err
+	}
+	w.expRate = pct
+	for _, rec := range cfg.Parties {
+		pt := &party{PartyRecord: rec}
+		w.parties[rec.ID] = pt
+		for _, m := range rec.Members {
+			w.partyByMember[lower(m)] = rec.ID
+		}
+		w.nextPartyID = max(w.nextPartyID, rec.ID)
 	}
 	for _, wp := range cfg.Warps {
 		src, ok := w.maps[wp.Map]
@@ -271,6 +309,7 @@ func (w *World) tick(now time.Time) {
 	w.tickMaps(now)
 	w.tickRespawns(now)
 	w.tickFloorItems(now)
+	w.tickParties(now)
 }
 
 // Join places a character on its saved map (snapping to the nearest walkable
@@ -306,6 +345,7 @@ func (w *World) Join(name string, data game.CharData, out Outbox) (uint32, error
 		w.players[p.id] = p
 		w.online[key] = p.id
 		w.place(p, m, data.X, data.Y)
+		w.partyLogin(p)
 		w.sendInventory(p)
 		w.sendStatus(p)
 		w.sendSkills(p)
@@ -325,7 +365,7 @@ func (w *World) place(p *Player, m *mapInstance, x, y int) {
 	p.m, p.x, p.y, p.path = m, x, y, nil
 	p.pending, p.pickup = nil, 0
 
-	p.out.Send(proto.EnterMap(p.id, m.name, p.x, p.y, p.dir, p.data.Job, WalkSpeed, p.look()))
+	p.out.Send(proto.EnterMap(p.id, m.name, p.x, p.y, p.dir, p.data.Job, uint16(p.speed), p.look()))
 	w.sendBuffs(p, time.Now())
 	for _, wp := range m.warps {
 		p.out.Send(proto.WarpPortal(wp.X, wp.Y))
@@ -421,6 +461,7 @@ func (w *World) Leave(id uint32) (data game.CharData, ok bool) {
 		w.removeFromMap(p)
 		delete(w.players, id)
 		delete(w.online, strings.ToLower(p.Name))
+		w.partyLogout(p)
 		data = p.data.Clone()
 		data.Map, data.X, data.Y = p.m.name, p.x, p.y
 		if p.dead {

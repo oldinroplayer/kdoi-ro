@@ -19,7 +19,66 @@ const FOOT_Y = 176;
  * Player ACT action groups; the action index is group * 8 + direction.
  * Weapons and shields only have frames in Ready (battle stance) and attacks.
  */
-export const PlayerAction = { Idle: 0, Walk: 1, Sit: 2, PickUp: 3, Ready: 4, Attack: 10, AttackSword: 11, Hurt: 6, Dead: 8 } as const;
+export const PlayerAction = {
+  Idle: 0,
+  Walk: 1,
+  Sit: 2,
+  PickUp: 3,
+  Ready: 4,
+  Attack1: 5,
+  Hurt: 6,
+  Dead: 8,
+  Attack2: 10,
+  Attack3: 11,
+} as const;
+
+/** Weapon types (item_db's View for weapons). */
+const W = { None: 0, Dagger: 1, Sword: 2, TwoHandSword: 3, Spear: 4, TwoHandSpear: 5, Axe: 6, TwoHandAxe: 7, Mace: 8, Rod: 10, Bow: 11 } as const;
+
+/** A weapon's type from its item ID, by item_db's numbering ranges. */
+function weaponType(itemId: number): number {
+  if (itemId <= 0) return W.None;
+  if (itemId >= 1116 && itemId <= 1118) return W.TwoHandSword; // Katana, Slayer, Bastard Sword
+  if (itemId >= 1100 && itemId < 1150) return W.Sword;
+  if (itemId >= 1150 && itemId < 1200) return W.TwoHandSword;
+  if (itemId >= 1200 && itemId < 1250) return W.Dagger;
+  if (itemId >= 1300 && itemId < 1350) return W.Axe;
+  if (itemId >= 1350 && itemId < 1400) return W.TwoHandAxe;
+  if (itemId >= 1400 && itemId < 1450) return W.Spear;
+  if (itemId >= 1450 && itemId < 1500) return W.TwoHandSpear;
+  if (itemId >= 1500 && itemId < 1550) return W.Mace;
+  if (itemId >= 1600 && itemId < 1700) return W.Rod;
+  if (itemId >= 1700 && itemId < 1750) return W.Bow;
+  return W.None;
+}
+
+/**
+ * Which of the three attack animations (0 = Attack1, 1 = Attack2, 2 = Attack3)
+ * each job plays with each weapon type, as the client's table has it (via
+ * roBrowser's DB/Jobs/WeaponAction.js). Novices differ by sex: [female, male].
+ * Weapons a job has no entry for use Attack1.
+ */
+type AttackTable = Partial<Record<number, number>>;
+const ATTACKS: Record<number, AttackTable | [AttackTable, AttackTable]> = {
+  0: [
+    { [W.Rod]: 1, [W.Sword]: 1, [W.TwoHandSword]: 1, [W.Axe]: 1, [W.TwoHandAxe]: 1, [W.Mace]: 1, [W.Dagger]: 2 },
+    { [W.Dagger]: 1, [W.Rod]: 2, [W.Sword]: 2, [W.TwoHandSword]: 2, [W.Axe]: 2, [W.TwoHandAxe]: 2, [W.Mace]: 2 },
+  ],
+  1: { [W.Dagger]: 1, [W.Sword]: 1, [W.TwoHandSword]: 1, [W.Axe]: 1, [W.TwoHandAxe]: 1, [W.Mace]: 1, [W.Spear]: 2, [W.TwoHandSpear]: 2 },
+  2: { [W.Rod]: 1, [W.Dagger]: 2 },
+  3: { [W.Bow]: 1, [W.Dagger]: 2 },
+  4: { [W.Rod]: 1, [W.Mace]: 1 },
+  5: { [W.Mace]: 1, [W.Axe]: 1, [W.TwoHandAxe]: 1, [W.Sword]: 1, [W.TwoHandSword]: 1, [W.Dagger]: 2 },
+  6: { [W.Sword]: 1, [W.TwoHandSword]: 1, [W.Dagger]: 1, [W.Bow]: 2 },
+};
+
+/** The attack action group a player plays for their job, sex and weapon. */
+export function playerAttackGroup(job: number, female: boolean, weapon: number): number {
+  const entry = ATTACKS[job];
+  const table = Array.isArray(entry) ? entry[female ? 0 : 1] : entry;
+  const which = table?.[weaponType(weapon)] ?? 0;
+  return [PlayerAction.Attack1, PlayerAction.Attack2, PlayerAction.Attack3][which];
+}
 
 /** Monster ACT action groups. */
 export const MonsterAction = { Idle: 0, Walk: 1, Attack: 2, Hurt: 3, Die: 4 } as const;
@@ -251,6 +310,17 @@ export class CharacterSprite {
 
   frameCount(group: number): number {
     return this.assets.body.act.actions[group * 8]?.frames.length ?? 1;
+  }
+
+  /** How many actions the body has (effect sprites number them directly, not × 8 directions). */
+  actionCount(): number {
+    return this.assets.body.act.actions.length;
+  }
+
+  /** Frame length (ms) and frame count of one raw action. */
+  actionTiming(action: number): { delay: number; frames: number } {
+    const a = this.assets.body.act.actions[action];
+    return { delay: a?.delay || 150, frames: a?.frames.length ?? 1 };
   }
 
   /** Total length of an action group's animation in ms. */

@@ -35,6 +35,7 @@ type Monster struct {
 	nextAttack time.Time
 	nextThink  time.Time // next wander or chase re-path
 	busyUntil  time.Time // flinching after being hit
+	nextLook   time.Time // aggressive monsters' next look around for players
 	damage     map[uint32]int
 }
 
@@ -131,6 +132,15 @@ func (w *World) tickMonster(mob *Monster, now time.Time) {
 		return
 	}
 
+	// Idle aggressive monsters look around and go for the nearest player in view.
+	if mob.def.Aggressive && mob.def.Fights && !now.Before(mob.nextLook) {
+		mob.nextLook = now.Add(aggroLookInterval)
+		if p := w.nearestPlayer(mob, mob.def.ViewRange); p != nil {
+			w.aggro(mob, p, now)
+			return
+		}
+	}
+
 	// Idle: stroll somewhere nearby every few seconds.
 	if mob.def.Mobile && !mob.walking() && !now.Before(mob.nextThink) {
 		mob.nextThink = now.Add(3*time.Second + time.Duration(w.rng.IntN(5000))*time.Millisecond)
@@ -164,23 +174,27 @@ func (w *World) killMonster(mob *Monster, now time.Time) {
 	}
 	var looter *Player
 	most := 0
+	earned := map[*Player][2]int{}
 	for pid, d := range mob.damage {
 		p := w.players[pid]
 		if p == nil || p.dead || p.m != mob.m || d <= 0 {
 			continue
 		}
-		base, job := mob.def.BaseExp*d/total, mob.def.JobExp*d/total
+		// The server's EXP rate (x2, x5...) scales what the monster gives.
+		base := mob.def.BaseExp * w.expRate / 100 * d / total
+		job := mob.def.JobExp * w.expRate / 100 * d / total
 		if mob.def.BaseExp > 0 {
 			base = max(base, 1)
 		}
 		if mob.def.JobExp > 0 {
 			job = max(job, 1)
 		}
-		w.giveExp(p, base, job)
+		earned[p] = [2]int{base, job}
 		if d > most {
 			looter, most = p, d
 		}
 	}
+	w.shareEXP(mob.m, earned)
 	var owner uint32
 	if looter != nil {
 		owner = looter.id
@@ -204,6 +218,42 @@ func (w *World) dropLoot(mob *Monster, owner uint32, now time.Time) {
 	for _, d := range mob.def.Drops {
 		if w.rng.IntN(10000) < d.Rate {
 			w.dropItem(mob.m, mob.x, mob.y, d.ItemID, 1, owner, now)
+		}
+	}
+}
+
+// aggroLookInterval is how often idle aggressive monsters look for players.
+const aggroLookInterval = 500 * time.Millisecond
+
+// nearestPlayer is the closest living player within cells of a monster, or nil.
+func (w *World) nearestPlayer(mob *Monster, cells int) *Player {
+	var best *Player
+	bestD := cells + 1
+	for _, p := range mob.m.players {
+		if p.dead {
+			continue
+		}
+		if d := chebyshev(mob.x, mob.y, p.x, p.y); d < bestD {
+			best, bestD = p, d
+		}
+	}
+	return best
+}
+
+// aggro sets a monster on a player.
+func (w *World) aggro(mob *Monster, p *Player, now time.Time) {
+	mob.target = p.id
+	mob.nextAttack = now
+	mob.nextThink = time.Time{} // start chasing right away
+}
+
+// castSensed lets idle cast-sensor monsters (mode flag 16) in view go after a
+// player who starts casting.
+func (w *World) castSensed(p *Player, now time.Time) {
+	for _, mob := range p.m.monsters {
+		if mob.def.CastSensor && mob.def.Fights && mob.target == 0 &&
+			chebyshev(mob.x, mob.y, p.x, p.y) <= mob.def.ViewRange {
+			w.aggro(mob, p, now)
 		}
 	}
 }

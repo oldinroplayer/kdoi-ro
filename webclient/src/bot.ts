@@ -1,7 +1,9 @@
 // A simple auto-attack bot, run by the client: it attacks the nearest monster
 // in sight, picks up the loot lying around between fights and, when there is
-// nothing to do, wanders to a random nearby cell to find a monster. The server still does the walking and fighting; the bot only sends the
-// same Attack and Move requests a player's clicks would.
+// nothing to do, wanders to a random nearby cell to find a monster. It keeps
+// clear of warp portals so it never walks itself off the map. The server
+// still does the walking and fighting; the bot only sends the same Attack and
+// Move requests a player's clicks would.
 import type { Game } from "./game";
 import type { Connection } from "./net";
 
@@ -14,6 +16,8 @@ const REATTACK_MS = 3000;
 /** Never reached the target in this long: skip it for a while (unreachable). */
 const GIVE_UP_MS = 10000;
 const IGNORE_MS = 60000;
+/** A target that strayed near a warp is left alone this long. */
+const WARP_IGNORE_MS = 10000;
 /** How far (in cells) the bot goes for items on the ground. */
 const LOOT_RANGE = 10;
 /** Ask again this often while walking to an item (the killer's first pick
@@ -24,6 +28,11 @@ const LOOT_GIVE_UP_MS = 8000;
 /** How far a wander step goes, in cells. */
 const WANDER_MIN = 6;
 const WANDER_MAX = 14;
+/** How close (in cells) to a warp's centre the bot never goes: the server
+ * warps anyone within a warp's span (up to 5 cells), plus one to spare. */
+const WARP_MARGIN = 6;
+
+type Cell = { x: number; y: number };
 
 export class AutoBot {
   private timer = 0;
@@ -38,6 +47,8 @@ export class AutoBot {
   private lootSent = 0;
   /** Items we couldn't pick up, until when to leave them alone. */
   private readonly ignoredItems = new Map<number, number>();
+  /** The current map's warps (from the last look around). */
+  private warps: Cell[] = [];
 
   constructor(
     private readonly game: () => Game | null,
@@ -91,12 +102,18 @@ export class AutoBot {
       this.reset();
     }
     const now = performance.now();
+    this.warps = view.warps;
     for (const [id, until] of this.ignored) if (until < now) this.ignored.delete(id);
     for (const [id, until] of this.ignoredItems) if (until < now) this.ignoredItems.delete(id);
 
     // Keep fighting the current target while it lives.
     const current = view.monsters.find((m) => m.id === this.target);
-    if (current) {
+    if (current && this.risky(view.self, current)) {
+      // It wandered by a warp: chasing it could carry us off the map.
+      this.ignored.set(this.target, now + WARP_IGNORE_MS);
+      this.target = 0;
+      conn.move(view.self.x, view.self.y); // a move ends the server's chase
+    } else if (current) {
       const swungAt = view.lastSwing.target === this.target ? view.lastSwing.at : 0;
       if (now - swungAt < REATTACK_MS) return; // the fight is on
       if (now - this.targetSince > GIVE_UP_MS && swungAt < this.targetSince) {
@@ -116,7 +133,7 @@ export class AutoBot {
     let best: { id: number; d: number } | null = null;
     for (const m of view.monsters) {
       const d = Math.max(Math.abs(m.x - x), Math.abs(m.y - y));
-      if (d <= SIGHT && !this.ignored.has(m.id) && (!best || d < best.d)) best = { id: m.id, d };
+      if (d <= SIGHT && !this.ignored.has(m.id) && (!best || d < best.d) && !this.risky(view.self, m)) best = { id: m.id, d };
     }
     if (best) {
       this.target = best.id;
@@ -128,6 +145,28 @@ export class AutoBot {
     // Nothing around: wander somewhere nearby once the last walk is done.
     this.target = 0;
     if (!view.self.walking) this.wander(conn, x, y);
+  }
+
+  /** Whether going from one cell to another gets near a warp: the goal is
+   * within the margin, or the straight line there (roughly the route walked)
+   * comes inside it closer than we already are. So right after arriving by
+   * warp the bot can still walk away from it. */
+  private risky(from: Cell, to: Cell): boolean {
+    const dist = (a: Cell, b: Cell) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+    const steps = Math.max(dist(from, to), 1);
+    for (const w of this.warps) {
+      if (dist(to, w) <= WARP_MARGIN) return true;
+      const start = dist(from, w);
+      for (let i = 1; i < steps; i++) {
+        const cell = {
+          x: Math.round(from.x + ((to.x - from.x) * i) / steps),
+          y: Math.round(from.y + ((to.y - from.y) * i) / steps),
+        };
+        const d = dist(cell, w);
+        if (d <= WARP_MARGIN && d < start) return true;
+      }
+    }
+    return false;
   }
 
   /** Walks to and picks up the nearest item in reach; true while busy with it. */
@@ -145,7 +184,9 @@ export class AutoBot {
     let best: { id: number; d: number } | null = null;
     for (const it of items) {
       const d = Math.max(Math.abs(it.x - x), Math.abs(it.y - y));
-      if (d <= LOOT_RANGE && !this.ignoredItems.has(it.id) && (!best || d < best.d)) best = { id: it.id, d };
+      if (d <= LOOT_RANGE && !this.ignoredItems.has(it.id) && (!best || d < best.d) && !this.risky({ x, y }, it)) {
+        best = { id: it.id, d };
+      }
     }
     if (!best) return false;
     this.loot = best.id;
@@ -172,7 +213,7 @@ export class AutoBot {
       const dist = WANDER_MIN + Math.random() * (WANDER_MAX - WANDER_MIN);
       const tx = Math.round(x + Math.cos(angle) * dist);
       const ty = Math.round(y + Math.sin(angle) * dist);
-      if (game.walkable(tx, ty)) {
+      if (game.walkable(tx, ty) && !this.risky({ x, y }, { x: tx, y: ty })) {
         conn.move(tx, ty);
         return;
       }

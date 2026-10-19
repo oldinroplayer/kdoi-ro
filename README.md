@@ -43,14 +43,14 @@ maps, then the monster, NPC and item files their generated content uses
 (`tools/extract_world.py` reads them from the server's Go data files):
 
 ```bash
-for m in prontera izlude geffen payon alberta prt_castle prt_fild08 prt_fild05 prt_fild06 gef_fild04 gef_fild00 gef_fild07 pay_arche pay_fild01 pay_fild08 pay_gld pay_fild03 prt_fild07 moc_fild12; do python3 tools/grf_extract.py ro-client/data.grf ro-client --map $m; done
+for m in prontera izlude geffen payon alberta prt_castle prt_fild08 prt_fild05 prt_fild06 gef_fild04 gef_fild00 gef_fild07 pay_arche pay_fild01 pay_fild08 pay_gld pay_fild03 prt_fild07 moc_fild12 pay_dun00; do python3 tools/grf_extract.py ro-client/data.grf ro-client --map $m; done
 python3 tools/extract_world.py
 ```
 
 **Tables** (item and skill names and descriptions, map names, BGM per map):
 
 ```bash
-for t in idnum2itemdisplaynametable idnum2itemresnametable idnum2itemdesctable skillnametable skilldesctable mapnametable mp3nametable; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\$t.txt"; done
+for t in idnum2itemdisplaynametable idnum2itemresnametable idnum2itemdesctable skillnametable skilldesctable mapnametable mp3nametable fogparametertable; do python3 tools/grf_extract.py ro-client/data.grf ro-client --filter "data\\$t.txt"; done
 ```
 
 **Appearance** (male and female: the 19 heads with their 9 hair colour palettes
@@ -149,25 +149,37 @@ cd webclient && npm install && npm run dev
 Open http://localhost:5173. See `server/README.md` for the protocol and
 `webclient/README.md` for the client layout.
 
-## 5. Release build
+## 5. Release and dev builds
 
-`build.sh` tests and builds both halves into `build/`: the server binary, the
-web client, the game files (copied from `ro-client/`), and `run.sh`. The server
-then serves everything itself, so the release is one command and one port:
+`build.sh` builds the server and client into `targets/<target>/`, with the game
+files and a `run.sh`. The server then serves everything itself, so each target
+is one command and one port:
+
+| | `./build.sh release` (default) | `./build.sh dev` |
+|---|---|---|
+| Server | tests first, stripped binary | debug info, no tests |
+| Client | minified | unminified, with source maps |
+| Game files | copied (self-contained, ~400 MB) | linked to `ro-client/` (quick) |
+| Port | 7000 | 7001 (runs next to release) |
 
 ```bash
-./build.sh
+./build.sh all
 ```
 
 ```bash
-build/run.sh
+targets/release/run.sh
 ```
 
-Open http://localhost:7000. Characters are kept in `build/save/kdoiro.db`, which
-rebuilds leave alone. Options: `--os linux --arch amd64` cross-compiles the
-server (it's pure Go), `--link-assets` symlinks the ~400 MB of game files
-instead of copying them, and `--no-assets` leaves them out. `build/` contains
-Gravity's client files, so keep it for your own use.
+Open http://localhost:7000 (dev: 7001). Each target keeps its characters in
+`targets/<target>/save/kdoiro.db`, which rebuilds leave alone. The terminal
+running it is a console: `exp <name> <base> [job]` gives an online player EXP on
+the spot, `zeny <name> <amount>` gives (or takes) zeny, `warpall <map> <x> <y>`
+moves everyone there (offline characters at their next login), `saveall <map> <x>
+<y>` sets everyone's respawn point there, `who` lists who's online.
+
+Options: `--os linux --arch amd64` cross-compiles the server (it's pure Go);
+`--copy-assets`, `--link-assets` and `--no-assets` change how game files are
+added. `targets/` contains Gravity's client files, so keep it for your own use.
 
 ## Reference data
 

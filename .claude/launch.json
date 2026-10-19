@@ -18,6 +18,15 @@
         "cd webclient && npx vite --port 5173 --strictPort"
       ],
       "port": 5173
+    },
+    {
+      "name": "dev-target",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "./build.sh dev && exec targets/dev/run.sh"
+      ],
+      "port": 7001
     }
   ]
 }

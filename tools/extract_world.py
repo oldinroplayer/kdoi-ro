@@ -61,12 +61,22 @@ def main():
     mobs = sorted({m for f in GO["mobs"] for m in re.findall(r'Sprite: "([^"]+)"', read(f))})
     npcs = sorted({m for f in GO["npcs"] for m in re.findall(r'Sprite: "([^"]+)"', read(f))})
     item_ids = sorted({int(i) for f in GO["items"] for i in re.findall(r"\bID: (\d+)", read(f))})
+    # Headgear and masks are worn as accessory sprites, one per gender.
+    headgear = sorted({m.group(2) for f in GO["items"]
+                       for m in re.finditer(r'Slot: (0x[0-9a-f]+)\b.*Sprite: "([^"]+)"', read(f))
+                       if int(m.group(1), 16) & 0x301})
     res = resource_names(out)
     names = sorted({res[i] for i in item_ids if i in res})
 
     wanted = []
     wanted += [f"data\\sprite\\몬스터\\{m}.{ext}" for m in mobs for ext in ("spr", "act")]
     wanted += [f"data\\sprite\\npc\\{n}.{ext}" for n in npcs for ext in ("spr", "act")]
+    wanted += [f"data\\sprite\\악세사리\\{sex}\\{sex}_{h}.{ext}"
+               for h in headgear for sex in ("남", "여") for ext in ("spr", "act")]
+    # Effects placed on maps (Payon Cave's torch fire), as in game.ts MAP_EFFECT_SPRITES,
+    # and msg (the critical hit starburst).
+    wanted += [f"data\\sprite\\이팩트\\{n}.{ext}" for n in ("torch_01", "msg") for ext in ("spr", "act")]
+    wanted += ["data\\wav\\effect\\ef_hit2.wav"]  # game.ts CRIT_SOUND
     for r in names:
         wanted += [f"data\\texture\\유저인터페이스\\item\\{r}.bmp", f"data\\texture\\유저인터페이스\\collection\\{r}.bmp",
                    f"data\\sprite\\아이템\\{r}.spr", f"data\\sprite\\아이템\\{r}.act"]
@@ -84,7 +94,7 @@ def main():
         found = [entries[k] for k in (f"data\\wav\\{s}".lower() for s in sorted(sounds)) if k in entries]
         grf_extract.extract_entries(f, found, out)
 
-    print(f"{len(mobs)} monsters, {len(npcs)} NPCs, {len(names)} items, {len(sounds)} sounds")
+    print(f"{len(mobs)} monsters, {len(npcs)} NPCs, {len(names)} items, {len(headgear)} headgear, {len(sounds)} sounds")
     for w in missing:
         print("not in the GRF:", w)
 

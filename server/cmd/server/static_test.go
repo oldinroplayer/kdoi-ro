@@ -34,7 +34,11 @@ func TestMountWeb(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "web", "index.html"), "client")
 	write(t, filepath.Join(dir, "data", "Sprite", "인간족", "Body_A.spr"), "sprite")
-	write(t, filepath.Join(dir, "bgm", "01.mp3"), "music")
+	write(t, filepath.Join(dir, "music", "01.mp3"), "music")
+	// The dev target links its game folders.
+	if err := os.Symlink(filepath.Join(dir, "music"), filepath.Join(dir, "bgm")); err != nil {
+		t.Fatal(err)
+	}
 
 	// The same routes as main, so pattern clashes show up here.
 	mux := http.NewServeMux()

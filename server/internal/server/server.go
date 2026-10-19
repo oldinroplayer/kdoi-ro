@@ -202,6 +202,24 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 			err = s.world.GiveRoom(id, p.Name)
 		case *proto.PickUp:
 			err = s.world.PickUp(id, p.ItemID)
+		case *proto.PartyCreate:
+			err = s.world.CreateParty(id, p.Name)
+		case *proto.PartyInvite:
+			err = s.world.InviteToParty(id, p.Name)
+		case *proto.PartyReply:
+			err = s.world.ReplyPartyInvite(id, p.PartyID, p.Accept)
+		case *proto.PartyLeave:
+			err = s.world.LeaveParty(id)
+		case *proto.PartyKick:
+			err = s.world.KickFromParty(id, p.Name)
+		case *proto.PartyEXP:
+			err = s.world.SetPartyEXP(id, p.Even)
+		case *proto.PartyChat:
+			if chatAllowed() {
+				err = s.world.PartyChat(id, p.Text)
+			}
+		case *proto.Emote:
+			err = s.world.Emote(id, int(p.Type))
 		case *proto.SetAppearance:
 			err = s.world.SetAppearance(id, int(p.Style), int(p.Color), p.Female)
 		case *proto.DropItem:
@@ -222,6 +240,7 @@ func (s *Server) login(ctx context.Context, sess *session) (account.Character, u
 	defer cancel()
 
 	start := game.NewChar(s.spawn.Map, s.spawn.X, s.spawn.Y)
+	start.WearStartEquipment()
 	for range maxLoginAttempts {
 		pkt, err := readPacket(lctx, sess.conn)
 		if err != nil {

@@ -40,6 +40,14 @@ const (
 	OpPickUp        uint16 = 0x0019
 	OpDropItem      uint16 = 0x001A
 	OpSetAppearance uint16 = 0x001B
+	OpEmote         uint16 = 0x001C
+	OpPartyCreate   uint16 = 0x001D
+	OpPartyInvite   uint16 = 0x001E
+	OpPartyReply    uint16 = 0x001F
+	OpPartyLeave    uint16 = 0x0020
+	OpPartyKick     uint16 = 0x0021
+	OpPartyChat     uint16 = 0x0022
+	OpPartyEXP      uint16 = 0x0023
 )
 
 // Server -> client opcodes.
@@ -84,6 +92,11 @@ const (
 	OpFloorItem       uint16 = 0x8026
 	OpFloorItemGone   uint16 = 0x8027
 	OpPlayerPickUp    uint16 = 0x8028
+	OpEmotion         uint16 = 0x8029
+	OpPartyInfo       uint16 = 0x802A
+	OpPartyInvited    uint16 = 0x802B
+	OpPartyLeft       uint16 = 0x802C
+	OpPlayerSpeed     uint16 = 0x802D
 )
 
 // ShopResult codes.
@@ -282,6 +295,23 @@ type PickUp struct{ ItemID uint32 }
 // DropItem puts inventory items on the ground at the player's feet.
 type DropItem struct{ Index, Amount uint16 }
 
+// Party requests (RO's /organize, invite, leave...).
+type (
+	PartyCreate struct{ Name string }
+	PartyInvite struct{ Name string }
+	PartyReply  struct {
+		PartyID uint32
+		Accept  bool
+	}
+	PartyLeave struct{}
+	PartyKick  struct{ Name string }
+	PartyChat  struct{ Text string }
+	PartyEXP   struct{ Even bool }
+)
+
+// Emote shows an emoticon over the player's head (0..Emotions-1).
+type Emote struct{ Type uint8 }
+
 // SetAppearance changes the player's hairstyle, hair colour and gender.
 type SetAppearance struct {
 	Style, Color uint8
@@ -356,6 +386,22 @@ func Decode(b []byte) (any, error) {
 		pkt = &RoomKick{Name: r.String()}
 	case OpPickUp:
 		pkt = &PickUp{ItemID: r.U32()}
+	case OpPartyCreate:
+		pkt = &PartyCreate{Name: r.String()}
+	case OpPartyInvite:
+		pkt = &PartyInvite{Name: r.String()}
+	case OpPartyReply:
+		pkt = &PartyReply{PartyID: r.U32(), Accept: r.U8() != 0}
+	case OpPartyLeave:
+		pkt = &PartyLeave{}
+	case OpPartyKick:
+		pkt = &PartyKick{Name: r.String()}
+	case OpPartyChat:
+		pkt = &PartyChat{Text: r.String()}
+	case OpPartyEXP:
+		pkt = &PartyEXP{Even: r.U8() != 0}
+	case OpEmote:
+		pkt = &Emote{Type: r.U8()}
 	case OpSetAppearance:
 		pkt = &SetAppearance{Style: r.U8(), Color: r.U8(), Female: r.U8() != 0}
 	case OpDropItem:
@@ -646,6 +692,7 @@ func PlayerJob(id uint32, job uint16) []byte {
 const (
 	ChatPublic uint8 = 0 // said out loud to everyone nearby
 	ChatRoom   uint8 = 1 // said inside a chat room
+	ChatParty  uint8 = 2 // said to the speaker's party
 )
 
 // ChatMessage shows a line someone said. id is the speaker (for the speech
@@ -737,3 +784,43 @@ func FloorItemGone(id uint32) []byte { return NewPacket(OpFloorItemGone).U32(id)
 
 // PlayerPickUp plays a player's pick-up motion.
 func PlayerPickUp(id uint32) []byte { return NewPacket(OpPlayerPickUp).U32(id).Bytes() }
+
+// Emotions is how many emoticons the 2004 client has (sprite/이팩트/emotion.act).
+const Emotions = 47
+
+// Emotion shows an emoticon over a unit's head.
+func Emotion(id uint32, kind uint8) []byte { return NewPacket(OpEmotion).U32(id).U8(kind).Bytes() }
+
+// PartyMember is one row of the party window. Offline members have only a name.
+type PartyMember struct {
+	Name           string
+	Online         bool
+	Map            string
+	X, Y           int
+	HP, MaxHP      int
+	Job, BaseLevel int
+}
+
+// PartyInfo is the whole party, sent to its online members on every change.
+func PartyInfo(partyID uint32, name, leader string, evenEXP bool, members []PartyMember) []byte {
+	w := NewPacket(OpPartyInfo).U32(partyID).String(name).String(leader).U8(boolU8(evenEXP)).U8(uint8(len(members)))
+	for _, m := range members {
+		w.String(m.Name).U8(boolU8(m.Online)).String(m.Map).U16(uint16(m.X)).U16(uint16(m.Y)).
+			U32(uint32(m.HP)).U32(uint32(m.MaxHP)).U16(uint16(m.Job)).U16(uint16(m.BaseLevel))
+	}
+	return w.Bytes()
+}
+
+// PartyInvited asks a player to join a party.
+func PartyInvited(partyID uint32, partyName, from string) []byte {
+	return NewPacket(OpPartyInvited).U32(partyID).String(partyName).String(from).Bytes()
+}
+
+// PartyLeft tells a player they're no longer in a party.
+func PartyLeft() []byte { return NewPacket(OpPartyLeft).Bytes() }
+
+// PlayerSpeed changes a unit's walk speed (ms per straight cell), e.g. while
+// Increase AGI lasts.
+func PlayerSpeed(id uint32, speed int) []byte {
+	return NewPacket(OpPlayerSpeed).U32(id).U16(uint16(speed)).Bytes()
+}

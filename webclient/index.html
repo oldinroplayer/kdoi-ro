@@ -54,6 +54,7 @@
           <button id="menu-skills" type="button" role="menuitem">Skills <kbd>Alt+S</kbd></button>
           <button id="menu-sit" type="button" role="menuitem">Sit / Stand <kbd>Insert</kbd></button>
           <button id="menu-room" type="button" role="menuitem">Chat Room <kbd>Alt+C</kbd></button>
+          <button id="menu-party" type="button" role="menuitem">Party <kbd>Alt+Z</kbd></button>
           <button id="menu-hair" type="button" role="menuitem">Appearance</button>
           <button id="menu-bot" type="button" role="menuitem">Auto Attack <kbd>Alt+B</kbd></button>
           <button id="menu-sound" type="button" role="menuitem">Sound</button>
@@ -75,7 +76,7 @@
     <div id="death" class="death" role="alertdialog" aria-labelledby="death-title" hidden>
       <div class="panel death-panel">
         <h2 id="death-title">You have been knocked out</h2>
-        <p class="subtitle">You'll wake up in Morroc with half your HP.</p>
+        <p class="subtitle">You'll wake up at your save point with half your HP.</p>
         <button id="respawn-button" type="button">Return to Save Point</button>
       </div>
     </div>
@@ -90,7 +91,7 @@
     <div id="login" class="overlay">
       <form id="login-form" class="panel" autocomplete="on">
         <h1>KDoiRo</h1>
-        <p class="subtitle">Enter a character name. New names are created as a Novice in Morroc.</p>
+        <p class="subtitle">Enter a character name. New names are created as a Novice outside Payon Cave.</p>
         <label>
           Character name
           <input id="name" name="username" autocomplete="username" required minlength="4" maxlength="23"
@@ -106,7 +107,7 @@
           <input id="server" value="ws://localhost:7000/ws" spellcheck="false" />
         </details>
         <p id="login-error" role="alert"></p>
-        <button id="login-button" type="submit">Enter Morroc</button>
+        <button id="login-button" type="submit">Enter</button>
       </form>
     </div>
 

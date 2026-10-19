@@ -84,6 +84,11 @@ func init() {
 			Items[it.ID] = it
 		}
 	}
+	for id, m := range Mobs {
+		if t, ok := mobTraits[id]; ok {
+			m.MobTraits = t
+		}
+	}
 }
 
 // 1st-job skill IDs used by the game rules.

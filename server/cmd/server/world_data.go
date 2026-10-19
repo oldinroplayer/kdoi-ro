@@ -9,7 +9,7 @@ import (
 )
 
 // cityMaps are the maps beyond Morroc: each city and its land exits.
-var cityMaps = []string{"prontera", "izlude", "geffen", "payon", "alberta", "prt_castle", "prt_fild08", "prt_fild05", "prt_fild06", "gef_fild04", "gef_fild00", "gef_fild07", "pay_arche", "pay_fild01", "pay_fild08", "pay_gld", "pay_fild03", "prt_fild07", "moc_fild12"}
+var cityMaps = []string{"prontera", "izlude", "geffen", "payon", "alberta", "prt_castle", "prt_fild08", "prt_fild05", "prt_fild06", "gef_fild04", "gef_fild00", "gef_fild07", "pay_arche", "pay_fild01", "pay_fild08", "pay_gld", "pay_fild03", "prt_fild07", "moc_fild12", "pay_dun00"}
 
 // cityWarps link the cities to their fields (and Morroc's fields, if any).
 var cityWarps = []world.Warp{
@@ -23,7 +23,9 @@ var cityWarps = []world.Warp{
 	{Map: "izlude", X: 30, Y: 78, SpanX: 3, SpanY: 3, DestMap: "prt_fild08", DestX: 367, DestY: 212},
 	{Map: "moc_fild12", X: 159, Y: 381, SpanX: 2, SpanY: 2, DestMap: "morocc", DestX: 160, DestY: 20},
 	{Map: "morocc", X: 160, Y: 17, SpanX: 2, SpanY: 2, DestMap: "moc_fild12", DestX: 159, DestY: 378},
+	{Map: "pay_arche", X: 36, Y: 131, SpanX: 2, SpanY: 2, DestMap: "pay_dun00", DestX: 21, DestY: 183},
 	{Map: "pay_arche", X: 81, Y: 18, SpanX: 5, SpanY: 2, DestMap: "payon", DestX: 175, DestY: 185},
+	{Map: "pay_dun00", X: 21, Y: 186, SpanX: 2, SpanY: 2, DestMap: "pay_arche", DestX: 39, DestY: 131},
 	{Map: "pay_fild01", X: 333, Y: 360, SpanX: 5, SpanY: 3, DestMap: "payon", DestX: 90, DestY: 26},
 	{Map: "pay_fild03", X: 392, Y: 63, SpanX: 2, SpanY: 7, DestMap: "alberta", DestX: 19, DestY: 233},
 	{Map: "pay_fild08", X: 17, Y: 75, SpanX: 2, SpanY: 4, DestMap: "payon", DestX: 186, DestY: 69},
@@ -77,6 +79,12 @@ var cityWarps = []world.Warp{
 
 // citySpawns are the 2004 field spawns (npc/mobs/fields/).
 var citySpawns = []world.Spawn{
+	{Map: "pay_dun00", MobID: 1015, Count: 20}, // Zombie
+	{Map: "pay_dun00", MobID: 1031, Count: 15}, // Poporing
+	{Map: "pay_dun00", MobID: 1076, Count: 35}, // Skeleton
+	{Map: "pay_dun00", MobID: 1005, Count: 15}, // Familiar
+	{Map: "pay_dun00", X: 140, Y: 140, SpanX: 5, SpanY: 5, MobID: 1084, Count: 3, Delay: 360000 * time.Millisecond, Variance: 180000 * time.Millisecond},   // Black Mushroom
+	{Map: "pay_dun00", X: 140, Y: 140, SpanX: 35, SpanY: 35, MobID: 1078, Count: 15, Delay: 180000 * time.Millisecond, Variance: 90000 * time.Millisecond}, // Red Plant
 	{Map: "gef_fild00", MobID: 1031, Count: 20}, // Poporing
 	{Map: "gef_fild00", MobID: 1008, Count: 20}, // Pupa
 	{Map: "gef_fild00", MobID: 1007, Count: 80}, // Fabre
@@ -157,6 +165,11 @@ var citySpawns = []world.Spawn{
 	{Map: "prt_fild08", MobID: 1113, Count: 10},  // Drops
 	{Map: "prt_fild08", MobID: 1008, Count: 20},  // Pupa
 	{Map: "prt_fild08", MobID: 1002, Count: 100}, // Poring
+	{Map: "pay_arche", X: 72, Y: 136, SpanX: 22, SpanY: 10, MobID: 1002, Count: 10, Delay: 5000 * time.Millisecond, Variance: 0 * time.Millisecond}, // Poring
+	{Map: "pay_arche", X: 72, Y: 136, SpanX: 22, SpanY: 10, MobID: 1007, Count: 8, Delay: 5000 * time.Millisecond, Variance: 0 * time.Millisecond},  // Fabre
+	{Map: "pay_arche", X: 72, Y: 136, SpanX: 22, SpanY: 10, MobID: 1008, Count: 5, Delay: 5000 * time.Millisecond, Variance: 0 * time.Millisecond},  // Pupa
+	{Map: "pay_arche", X: 72, Y: 136, SpanX: 22, SpanY: 10, MobID: 1063, Count: 8, Delay: 5000 * time.Millisecond, Variance: 0 * time.Millisecond},  // Lunatic
+	{Map: "pay_arche", X: 72, Y: 136, SpanX: 22, SpanY: 10, MobID: 1010, Count: 6, Delay: 5000 * time.Millisecond, Variance: 0 * time.Millisecond},  // Willow
 }
 
 // cityNPCs are the outdoor shops, the Kafras and the town Warpers.
@@ -233,6 +246,10 @@ var cityNPCs = []world.NPC{
 	{ID: 53013, Name: "Weapon Dealer", Sprite: "1_m_03", Map: "alberta", X: 133, Y: 133, Dir: 4, Shop: []int{1101, 1104, 1107, 1201, 1204, 1207, 1601, 1701, 1301, 1351, 1354, 1357, 1360}},
 	{ID: 53014, Name: "Armor Dealer", Sprite: "4w_f_01", Map: "alberta", X: 137, Y: 133, Dir: 4, Shop: []int{2101, 2103, 2401, 2403, 2405, 2501, 2503, 2505, 2203, 2201, 2205, 2226, 2301, 2303, 2305, 2321, 2328, 2332, 2307, 2309, 2312, 2314}},
 	{ID: 53015, Name: "Tool Dealer", Sprite: "4_m_01", Map: "alberta", X: 135, Y: 135, Dir: 4, Shop: []int{501, 502, 503, 504}},
+	{ID: 54001, Name: "Job Guide", Sprite: "1_m_jobguider", Map: "pay_arche", X: 40, Y: 137, Dir: 4, Kind: world.KindJobChange},
+	{ID: 54002, Name: "Tool Dealer", Sprite: "4w_m_02", Map: "pay_arche", X: 44, Y: 137, Dir: 4, Shop: []int{501, 502, 503, 504}},
+	{ID: 54003, Name: "Weapon Dealer", Sprite: "4_m_04", Map: "pay_arche", X: 40, Y: 126, Dir: 0, Shop: []int{1101, 1104, 1107, 1201, 1204, 1207, 1601, 1701, 1704, 1707, 1710, 1713, 1714, 1718}},
+	{ID: 54004, Name: "Armor Dealer", Sprite: "4_m_barber", Map: "pay_arche", X: 44, Y: 126, Dir: 0, Shop: []int{2401, 2403, 2405, 2501, 2503, 2505, 2208, 2211, 2212, 2301, 2303, 2305, 2321, 2328, 2332, 2309, 2330}},
 }
 
 // morroccDealerStock is Morroc's indoor 2004 dealer stock, by dealer name.

@@ -43,12 +43,13 @@ func TestKafraSaveAndTeleport(t *testing.T) {
 	c.send(click)
 	c.expectDialog()
 	c.send(reply(1))
-	if opts := c.expectDialog(); len(opts) != 2 || opts[0] != "Field -> 500 z" || opts[1] != "Cancel" {
+	// The teleport service is free (the 2004 price of 500 z is waived).
+	if opts := c.expectDialog(); len(opts) != 2 || opts[0] != "Field" || opts[1] != "Cancel" {
 		t.Fatalf("teleport menu: %q", opts)
 	}
 	c.send(reply(0))
 	c.expectEnterMap("field")
-	if s := c.expectStatus(); s.zeny != game.StartZeny-500 {
+	if s := c.expectStatus(); s.zeny != game.StartZeny {
 		t.Fatalf("zeny after teleport = %d", s.zeny)
 	}
 	c.conn.CloseNow()

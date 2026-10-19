@@ -29,6 +29,7 @@ type floorItem struct {
 	itemID     int
 	amount     int
 	owner      uint32 // player with first pick, until ownerUntil
+	ownerParty uint32 // ...shared with their party
 	ownerUntil time.Time
 	expires    time.Time
 }
@@ -56,6 +57,7 @@ func (w *World) dropItem(m *mapInstance, x, y, itemID, amount int, owner uint32,
 	}
 	if owner != 0 {
 		it.owner, it.ownerUntil = owner, now.Add(lootPriority)
+		it.ownerParty = w.partyIDOf(w.players[owner])
 	}
 	m.items[it.id] = it
 	w.broadcast(m, it.packet(true))
@@ -131,7 +133,8 @@ func (w *World) tickPickUp(p *Player, now time.Time) {
 // pickUp moves a floor item into the player's inventory if it may and can.
 func (w *World) pickUp(p *Player, it *floorItem, now time.Time) {
 	name := game.Items[it.itemID].Name
-	if it.owner != 0 && it.owner != p.id && now.Before(it.ownerUntil) {
+	sameParty := it.ownerParty != 0 && it.ownerParty == w.partyIDOf(p)
+	if it.owner != 0 && it.owner != p.id && !sameParty && now.Before(it.ownerUntil) {
 		p.out.Send(proto.Message("You can't pick that up yet: it belongs to whoever won the fight."))
 		return
 	}

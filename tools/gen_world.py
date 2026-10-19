@@ -40,6 +40,7 @@ MAPS = {
 EXTRA_FIELDS = [
     "prt_fild07",  # west of prt_fild08 (south of Prontera): Rockers
     "moc_fild12",  # south of Morroc
+    "pay_dun00",  # Payon Cave level 1, entered from the Archer Village (pay_arche)
 ]
 # Already hand-written in main.go (Morroc and its two fields).
 EXISTING = {"morocc", "moc_fild07", "moc_fild06"}
@@ -74,6 +75,32 @@ DEALERS = ["Weapon Dealer", "Armor Dealer", "Tool Dealer"]
 # Where each dealer stands relative to the Warper (inside its open 5x5 square).
 DEALER_OFFSETS = {"Weapon Dealer": (-2, 0), "Armor Dealer": (2, 0), "Tool Dealer": (0, 2)}
 DEALER_ID_BASE = 53000
+
+# A camp outside Payon Cave (in the Archer Village, by the entrance at 36,131):
+# a Job Guide and dealers with Payon's stock, so players can change job and
+# restock before going in. Not in 2004 RO. (name, x, y, facing); the lane from
+# the cave exit (39,131) eastward is left clear.
+CAVE_CAMP_MAP = "pay_arche"
+CAVE_CAMP_STOCK = "payon"
+CAVE_CAMP = [
+    ("Job Guide", 40, 137, 4),
+    ("Tool Dealer", 44, 137, 4),
+    ("Weapon Dealer", 40, 126, 0),
+    ("Armor Dealer", 44, 126, 0),
+]
+CAMP_ID_BASE = 54000
+
+# Starter monsters (levels 1-4, good to about base level 10) on the open
+# ground in front of Payon Cave, where new characters start. Not in the 2004
+# data: pay_arche has no spawns there. (map, x, y, span x, span y, mob, count,
+# respawn ms, respawn variance ms, name), as in eAthena's monster lines.
+CAVE_CAMP_SPAWNS = [
+    ("pay_arche", 72, 136, 22, 10, 1002, 10, 5000, 0, "Poring"),
+    ("pay_arche", 72, 136, 22, 10, 1007, 8, 5000, 0, "Fabre"),
+    ("pay_arche", 72, 136, 22, 10, 1008, 5, 5000, 0, "Pupa"),
+    ("pay_arche", 72, 136, 22, 10, 1063, 8, 5000, 0, "Lunatic"),
+    ("pay_arche", 72, 136, 22, 10, 1010, 6, 5000, 0, "Willow"),
+]
 
 # The August 2004 client still has the old 200x200 Payon; eAthena's November
 # data already describes the renewed one. Its exits were found by flood-filling
@@ -149,7 +176,9 @@ def parse_warps(loaded):
 
 def parse_spawns(loaded):
     out = []
-    for path in sorted(glob.glob(os.path.join(REF, "npc", "mobs", "fields", "*.txt"))):
+    paths = glob.glob(os.path.join(REF, "npc", "mobs", "fields", "*.txt")) + \
+        glob.glob(os.path.join(REF, "npc", "mobs", "dungeons", "*.txt"))
+    for path in sorted(paths):
         for line in read_lines(path):
             p = tabs(line)
             if len(p) < 4 or p[1].strip() != "monster":
@@ -160,7 +189,7 @@ def parse_spawns(loaded):
                 continue
             f = p[3].split(",")
             out.append((m, num(a[1]), num(a[2]), num(a[3]), num(a[4]), num(f[0]), num(f[1]), num(f[2]), num(f[3]), p[2].strip()))
-    return out
+    return out + [s for s in CAVE_CAMP_SPAWNS if s[0] in loaded]
 
 
 def parse_shops(loaded):
@@ -258,9 +287,11 @@ def parse_kafras(loaded):
     return out
 
 
-def npc_sprite_table():
-    """The 2004 client's NPC ID -> sprite name table, recovered from ragexe.exe:
-    it fills the table with `mov [reg+id*4], offset "NAME"` instructions."""
+def exe_tables():
+    """Name tables the 2004 client fills in code, recovered from ragexe.exe: it
+    writes them with `mov [reg+id*4], offset "NAME"` instructions (32-bit
+    displacement, or 8-bit for the first 32 IDs). Returns (NPC and monster
+    sprite names by class ID, headgear sprite names by item View ID)."""
     exe = open(os.path.join(ROOT, "ro-client", "ragexe.exe"), "rb").read()
     pe = struct.unpack_from("<I", exe, 0x3C)[0]
     nsec = struct.unpack_from("<H", exe, pe + 6)[0]
@@ -279,7 +310,7 @@ def npc_sprite_table():
                 return v - base - va + rptr
         return None
 
-    names = {}
+    names, headgear = {}, {}
     for m in re.finditer(rb"\xc7[\x80-\x87](....)(....)\x8b", exe, re.S):
         disp, imm = struct.unpack("<II", m.group(1) + m.group(2))
         off = offset(imm)
@@ -288,7 +319,29 @@ def npc_sprite_table():
         s = exe[off:exe.find(b"\0", off)]
         if 2 < len(s) < 40 and re.fullmatch(rb"[0-9A-Za-z_]+", s):
             names.setdefault(disp // 4, []).append(s.decode().lower())
-    return names
+
+    def accessory(imm):
+        off = offset(imm)
+        if off is None:
+            return None
+        s = exe[off:exe.find(b"\0", off)]
+        if not s.startswith(b"_") or not 1 < len(s) < 40:
+            return None
+        try:
+            return s.decode("cp949")[1:]  # "_햇" -> sprite/악세사리/<sex>/<sex>_햇
+        except UnicodeDecodeError:
+            return None
+
+    for m in re.finditer(rb"\xc7[\x80-\x87](....)(....)", exe, re.S):
+        disp, imm = struct.unpack("<II", m.group(1) + m.group(2))
+        name = accessory(imm)
+        if name and disp % 4 == 0 and disp < 12000:
+            headgear[disp // 4] = name
+    for m in re.finditer(rb"\xc7[\x40-\x47](.)(....)", exe, re.S):
+        name = accessory(struct.unpack("<I", m.group(2))[0])
+        if name and m.group(1)[0] % 4 == 0:
+            headgear.setdefault(m.group(1)[0] // 4, name)
+    return names, headgear
 
 
 def go_str(s):
@@ -303,7 +356,7 @@ def main():
 
     loaded = set(all_maps()) | EXISTING
     mob_db, item_db = csv_rows("mob_db.txt"), csv_rows("item_db.txt")
-    npc_names = npc_sprite_table()
+    npc_names, headgear_names = exe_tables()
     problems = []
 
     def npc_sprite(npc_id):
@@ -343,7 +396,8 @@ def main():
     problems += [f"item {i} missing from item_db" for i in sorted(wanted) if i not in item_db]
 
     write_mobs(mobs, items)
-    write_items(items)
+    write_items(items, headgear_names)
+    write_elements(mob_db, set(mobs))
     write_world(spawns, shops, parse_kafras(loaded), parse_warps(loaded), npc_sprite, dealers)
     for p in problems:
         print("note:", p)
@@ -390,7 +444,53 @@ def write_mobs(mobs, items):
     write("server/internal/game/mobs_data.go", lines)
 
 
-def write_items(items):
+def write_elements(mob_db, generated):
+    """The element damage table (db/attr_fix.txt) and every monster's element,
+    race, size and mode flags (hand-written monsters.go ones too)."""
+    table, level = [], None
+    for line in read_lines(os.path.join(REF, "db", "attr_fix.txt")):
+        head = re.match(r"\s*(\d+),10\s*$", line)
+        if head:
+            level = int(head.group(1))
+            table.append([])
+            continue
+        row = [int(v) for v in re.findall(r"-?\d+", line)]
+        if level and len(row) == 10:
+            table[-1].append(row)
+    assert len(table) == 4 and all(len(t) == 10 for t in table), "unexpected attr_fix.txt layout"
+
+    hand = {int(i) for i in re.findall(r"^\t(\d+): \{", open(os.path.join(ROOT, "server/internal/game/monsters.go")).read(), re.M)}
+    lines = [
+        "// Code generated by tools/gen_world.py from reference/eathena-2004/db; DO NOT EDIT.",
+        "",
+        "package game",
+        "",
+        "// attrFix[level-1][attack element][defending element] is the damage percent",
+        "// an attack of one element does to a target of another (db/attr_fix.txt).",
+        "// Negative values heal the target.",
+        "var attrFix = [4][NumElements][NumElements]int{",
+    ]
+    for t in table:
+        lines.append("\t{")
+        lines += ["\t\t{" + ", ".join(str(v) for v in row) + "}," for row in t]
+        lines.append("\t},")
+    lines += ["}", "", "// mobTraits are each monster's element, race, size and behaviour (mob_db).",
+              "var mobTraits = map[int]MobTraits{"]
+    for mid in sorted(hand | generated):
+        r = mob_db[mid]
+        element, size, race, mode = num(r[23]), num(r[21]), num(r[22]), num(r[24])
+        lines.append(f"\t{mid}: {{Element: {element % 10}, ElementLevel: {max(element // 20, 1)}, Race: {race}, Size: {size}, "
+                     f"ViewRange: {num(r[19])}, Aggressive: {str(bool(mode & 4)).lower()}, "
+                     f"CastSensor: {str(bool(mode & 16)).lower()}}}, // {r[2]}")
+    lines += ["}", ""]
+    write("server/internal/game/elements_data.go", lines)
+
+
+# Equip location bits that show on the head (top, middle, lower headgear).
+HEAD_SLOTS = 0x100 | 0x200 | 0x001
+
+
+def write_items(items, headgear_names):
     lines = [
         "// Code generated by tools/gen_world.py from reference/eathena-2004/db/item_db.txt; DO NOT EDIT.",
         "",
@@ -425,6 +525,9 @@ def write_items(items):
                     fields.append(f"Range: {num(r[9])}")
                 if view in WEAPON_SPRITES:
                     fields.append(f"Sprite: {go_str(WEAPON_SPRITES[view])}")
+            elif loc & HEAD_SLOTS and num(r[16]) in headgear_names:
+                # Headgear and masks: the client's accessory sprite for the item's View.
+                fields.append(f"Sprite: {go_str(headgear_names[num(r[16])])}")
         else:
             fields.append("Type: TypeEtc")
         lines.append("\t{" + ", ".join(fields) + "},")
@@ -493,6 +596,15 @@ def write_world(spawns, shops, kafras, warps, npc_sprite, dealers):
             dx, dy = DEALER_OFFSETS[name]
             lines.append(f"\t{{ID: {nid}, Name: {go_str(name)}, Sprite: {go_str(npc_sprite(cls))}, Map: {go_str(town)}, "
                          f"X: {wx + dx}, Y: {wy + dy}, Dir: 4, Shop: []int{{{', '.join(map(str, stock))}}}}},")
+    # The camp outside Payon Cave.
+    for i, (name, x, y, facing) in enumerate(CAVE_CAMP, 1):
+        head = f"\t{{ID: {CAMP_ID_BASE + i}, Name: {go_str(name)}, "
+        if name == "Job Guide":
+            lines.append(head + f'Sprite: "1_m_jobguider", Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, Kind: world.KindJobChange}},')
+            continue
+        cls, stock = dealers[CAVE_CAMP_STOCK][name]
+        lines.append(head + f"Sprite: {go_str(npc_sprite(cls))}, Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, "
+                     f"Shop: []int{{{', '.join(map(str, stock))}}}}},")
     lines += ["}", ""]
     # Morroc's hand-written dealers (main.go) add the 2004 stock to theirs.
     lines += ["// morroccDealerStock is Morroc's indoor 2004 dealer stock, by dealer name.",

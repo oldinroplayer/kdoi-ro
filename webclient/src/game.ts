@@ -23,12 +23,13 @@ import {
   LightColumn,
   loadStr,
   castTextures,
+  RingCylinder,
   RisingImage,
   SpriteEffect,
   StrEffect,
   type Anchor,
 } from "./render/skilleffects";
-import { loadEffectAssets, loadItemAssets } from "./render/character";
+import { loadEffectAssets, loadItemAssets, playerAttackGroup } from "./render/character";
 import { loadTexture } from "./render/textures";
 import { Skill } from "./skills";
 import { Portal } from "./render/portal";
@@ -42,6 +43,8 @@ export interface MinimapView {
   height: number;
   self: { x: number; y: number; dir: number } | null;
   players: [number, number][];
+  /** Party members among the players. */
+  party: [number, number][];
   npcs: [number, number][];
   portals: [number, number][];
 }
@@ -101,7 +104,8 @@ class Unit {
     readonly id: number,
     readonly kind: Kind,
     readonly name: string,
-    readonly speed: number,
+    /** ms per straight cell; changes with buffs like Increase AGI. */
+    public speed: number,
     /** Replaced when a player changes job. */
     public sprite: CharacterSprite,
     readonly label: HTMLElement,
@@ -169,6 +173,8 @@ export interface BotView {
   monsters: { id: number; x: number; y: number }[];
   /** Items lying on the ground. */
   items: { id: number; x: number; y: number }[];
+  /** Warp portals' centre cells. */
+  warps: { x: number; y: number }[];
   /** Our last swing (hit or miss) at a monster, and when (performance.now()). */
   lastSwing: { target: number; at: number };
 }
@@ -191,6 +197,24 @@ const HEAD_HEIGHT = 75;
 /** Sprite pixels from the feet up to the middle of a body (where hits land). */
 const BODY_HEIGHT = 30;
 const PITCH = THREE.MathUtils.degToRad(50);
+/** Backdrop beyond the map edges outdoors. */
+const BACKGROUND = 0x0e0d12;
+/** Dungeon tint over the fog table's values: a little stronger and a darker
+ * shade of its colour, for the gloom of the cave. */
+const DUNGEON_TINT_STRENGTH = 1.5;
+const DUNGEON_TINT_SHADE = 0.6;
+/** msg.spr's frame with the red starburst critical hits are drawn on. */
+const CRIT_BURST_FRAME = 3;
+/** Played on top of the hit sound for critical hits. The 2004 client has no
+ * sound of its own for them, so this is a heavier impact from its effects. */
+const CRIT_SOUND = "effect/ef_hit2.wav";
+/** Sprites for effects placed on maps, by the client's effect ID. */
+const MAP_EFFECT_SPRITES: Record<number, string> = {
+  47: "torch_01", // torch fire (Payon Cave braziers)
+};
+/** How quickly sprites take on the light of a new cell (per frame). */
+const SPRITE_LIGHT_EASE = 0.15;
+const cellLight = new THREE.Color();
 
 export class Game {
   /** Our character's name (EnterMap doesn't carry it); set by the login screen. */
@@ -198,6 +222,8 @@ export class Game {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 5, 4000);
+  /** Covers the view in a dungeon's fog colour (Payon Cave's dark blue-violet). */
+  private readonly dungeonTint = createScreenTint();
   private readonly raycaster = new THREE.Raycaster();
   private readonly cursor: THREE.Mesh;
   private readonly labels: NameLabels;
@@ -219,6 +245,8 @@ export class Game {
   private pendingSince = 0;
   private hovered: Unit | null = null;
   private targeting: Targeting | null = null;
+  /** Lowercase names of our party members (pink on the minimap). */
+  private partyMembers = new Set<string>();
   private readonly signs = new Map<number, RoomSign>();
   private readonly floorItems = new Map<number, FloorItem>();
   private hoveredItem: FloorItem | null = null;
@@ -245,8 +273,15 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.labels = new NameLabels(canvas);
     this.floats = new FloatingTexts(canvas);
+    // Critical hits show their number on the client's red starburst (msg.spr frame 3).
+    void loadEffectAssets("msg")
+      .then((msg) => {
+        const burst = msg.body.indexed[CRIT_BURST_FRAME];
+        if (burst && !this.disposed) this.floats.setCritBurst(burst.toDataURL());
+      })
+      .catch((err) => console.warn("critical burst missing", err));
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.scene.background = new THREE.Color(0x0e0d12);
+    this.scene.background = new THREE.Color(BACKGROUND);
 
     const cursorGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9);
     cursorGeo.rotateX(-Math.PI / 2);
@@ -379,6 +414,21 @@ export class Game {
       case "floorItemGone":
         this.removeFloorItem(p.id);
         break;
+      case "speed": {
+        const u = this.units.get(p.id);
+        if (u) this.setSpeed(u, p.speed, performance.now());
+        break;
+      }
+      case "emotion": {
+        const u = this.units.get(p.id);
+        if (u) {
+          void this.whenLoaded(
+            loadEffectAssets("emotion"),
+            (assets) => new SpriteEffect(assets, this.anchorOf(u, HEAD_HEIGHT + 10), p.kind),
+          );
+        }
+        break;
+      }
       case "pickUp": {
         // RO's pick-up motion (body action 3: bending down to the ground).
         const u = this.units.get(p.id);
@@ -456,9 +506,13 @@ export class Game {
       }
       if (!sameMap) {
         this.map = map;
+        // Dungeons sit in darkness; outdoors keeps the usual backdrop.
+        (this.scene.background as THREE.Color).set(isDungeon(map.name) ? 0x000000 : BACKGROUND);
         this.scene.add(map.root);
+        this.setDungeonTint(map);
       }
       this.ambientNext = map.sounds.map(() => 0);
+      this.addMapEffects(map);
       this.selfId = p.selfId;
       // The server doesn't echo our own name in EnterMap; the login screen tells us.
       await this.addPlayer(p.selfId, this.selfName, p.job, p.speed, p.x, p.y, p.dir, false, p.look, false);
@@ -554,8 +608,10 @@ export class Game {
     if (!this.map || this.loading) return null;
     const self = this.units.get(this.selfId);
     const players: [number, number][] = [];
+    const party: [number, number][] = [];
     for (const u of this.units.values()) {
-      if (u.kind === "player" && u.id !== this.selfId) players.push([u.x, u.y]);
+      if (u.kind !== "player" || u.id === this.selfId) continue;
+      (this.partyMembers.has(u.name.toLowerCase()) ? party : players).push([u.x, u.y]);
     }
     return {
       map: this.map.name,
@@ -563,6 +619,7 @@ export class Game {
       height: this.map.gat.height,
       self: self ? { x: self.x, y: self.y, dir: self.dir } : null,
       players,
+      party,
       npcs: [...this.npcs.values()].map((n) => [n.x, n.y]),
       portals: this.portalCells,
     };
@@ -581,8 +638,14 @@ export class Game {
       self: { x: Math.floor(self.x), y: Math.floor(self.y), dead: self.dead, sitting: self.sitting, walking: self.walk.length > 0 },
       monsters,
       items: [...this.floorItems.values()].map((it) => ({ id: it.id, x: Math.floor(it.x), y: Math.floor(it.y) })),
+      warps: this.portalCells.map(([x, y]) => ({ x: Math.floor(x), y: Math.floor(y) })),
       lastSwing: this.lastSwing,
     };
+  }
+
+  /** Our party's member names (empty set: no party). */
+  setPartyMembers(names: string[]): void {
+    this.partyMembers = new Set(names.map((n) => n.toLowerCase()));
   }
 
   /** Whether a cell can be walked on (for picking wander destinations). */
@@ -772,11 +835,13 @@ export class Game {
     const kind = p.miss ? "miss" : p.target === this.selfId ? "hurt" : p.crit ? "crit" : "damage";
     for (let i = 0; i < hits; i++) {
       const amount = i === hits - 1 ? p.damage - each * (hits - 1) : each;
-      const text = p.miss ? "Miss" : p.crit ? `${amount}!` : String(amount);
+      const text = p.miss ? "Miss" : String(amount);
       setTimeout(() => {
         if (this.disposed) return;
         this.floats.spawn(text, kind, this.headOf(target));
         if (!p.miss) this.playHit(p.skillId, i, src, target);
+        // A critical lands harder: an extra heavy impact over the weapon's hit.
+        if (p.crit && i === 0) audio.play(CRIT_SOUND, this.volumeAt(target));
       }, first + i * spacing);
     }
   }
@@ -829,7 +894,8 @@ export class Game {
         audio.play("_heal_effect.wav", volume);
         break;
       case Skill.IncAgi:
-        this.addEffect(new LightColumn(this.anchorOf(target), 0x9cc8ff));
+        // RO's blue streaks of light shooting up around the target, with "AGI Up" rising out.
+        void this.whenLoaded(loadTexture("texture/effect/ring_blue.tga"), (tex) => new RingCylinder(tex, this.anchorOf(target)));
         void this.playRisingImage("texture/effect/agi_up.bmp", target);
         audio.play("effect/ef_incagility.wav", volume);
         break;
@@ -945,11 +1011,10 @@ export class Game {
     return true;
   }
 
-  /** Attack animation: swords swing with action 11, daggers and fists with 10. */
+  /** Attack animation: monsters have one; players pick by job, sex and weapon. */
   private attackGroup(u: Unit): number {
     if (u.kind === "monster") return MonsterAction.Attack;
-    const weapon = u.look?.weapon ?? 0;
-    return weapon >= 1100 && weapon < 1200 ? PlayerAction.AttackSword : PlayerAction.Attack;
+    return playerAttackGroup(u.job, !!u.look?.female, u.look?.weapon ?? 0);
   }
 
   /** RO's white shockwave ring on a unit that was just hit. */
@@ -976,6 +1041,44 @@ export class Game {
       e.dispose();
       return false;
     });
+  }
+
+  /**
+   * In the 2004 client a dungeon's tint is its fog-table entry (deleting the
+   * entry or typing /fog takes the purple away). Underground the whole view is
+   * covered evenly, so it's a screen overlay here: the fog colour at the
+   * table's strength over everything, sprites and effects included. Outdoor
+   * fog stays off.
+   */
+  private setDungeonTint(map: MapView) {
+    const tint = this.dungeonTint;
+    const fog = isDungeon(map.name) ? map.fog : null;
+    tint.visible = !!fog;
+    if (!fog) return;
+    const mat = tint.material as THREE.MeshBasicMaterial;
+    mat.color.copy(fog.color).multiplyScalar(DUNGEON_TINT_SHADE);
+    mat.opacity = Math.min(fog.strength * DUNGEON_TINT_STRENGTH, 1);
+    if (!tint.parent) this.scene.add(tint);
+  }
+
+  /** Effects the map places in its scenery, like the torch fires in Payon Cave. */
+  private addMapEffects(map: MapView) {
+    for (const e of map.effects) {
+      const sprite = MAP_EFFECT_SPRITES[e.id];
+      if (!sprite) continue;
+      // The height counts up from the ground here (Payon Cave's torches sit at
+      // +4, the brazier's base), unlike model positions where y points down;
+      // the fire sprite itself is drawn well above that point, onto the bowl.
+      const at = roToWorld(e.x, -e.y, e.z);
+      // Nudged towards the camera so the brazier's rim doesn't cut the flame.
+      const anchor = () => this.camera.position.clone().sub(at).normalize().multiplyScalar(4).add(at);
+      void loadEffectAssets(sprite)
+        .then((assets) => {
+          if (this.map !== map || this.disposed) return;
+          this.addEffect(new SpriteEffect(assets, anchor, 0, true));
+        })
+        .catch((err) => console.warn("map effect missing", e.id, sprite, err));
+    }
   }
 
   private clearEffects() {
@@ -1112,6 +1215,28 @@ export class Game {
         this.labels.placeAbove(u.speech.el, this.headOf(u)(), this.camera);
       }
     }
+  }
+
+  /** Changes a unit's walk speed, re-timing the rest of a walk in progress so
+   * it keeps in step with the server (which applies it from the next step). */
+  private setSpeed(u: Unit, speed: number, now: number) {
+    if (speed <= 0 || speed === u.speed) return;
+    const ratio = speed / u.speed;
+    u.speed = speed;
+    let t = now;
+    u.walk.forEach((s, i) => {
+      if (i === 0) {
+        // Keep the current step where it is; only what's left of it speeds up.
+        const k = Math.min(1, Math.max(0, (now - s.t0) / s.dur));
+        s.dur *= ratio;
+        s.t0 = now - k * s.dur;
+        t = s.t0 + s.dur;
+        return;
+      }
+      s.dur *= ratio;
+      s.t0 = t;
+      t += s.dur;
+    });
   }
 
   /** Shows what a unit said in a bubble over its head. */
@@ -1275,6 +1400,10 @@ export class Game {
     const toCam = this.camera.position.clone().sub(feet).normalize().multiplyScalar(8);
     sprite.object.position.copy(feet).add(toCam);
     sprite.object.quaternion.copy(this.camera.quaternion);
+    // Take on the light where it stands (dark caves, tree shade), easing
+    // between cells so walking through doesn't flicker.
+    const mat = sprite.object.material as THREE.MeshBasicMaterial;
+    mat.color.lerp(this.map!.lightAt(x, y, cellLight), SPRITE_LIGHT_EASE);
   }
 
   private spriteDir(serverDir: number): number {
@@ -1409,8 +1538,11 @@ export class Game {
       if (this.targeting) {
         const t = this.targeting;
         const want = t.kind === "enemy" ? "monster" : "player";
+        // Heal can also be aimed at a monster: it burns the undead (the server
+        // refuses anything else).
+        const healOnMonster = t.skillId === Skill.Heal && u?.kind === "monster";
         // A near miss on a small or moving target still counts.
-        const picked = u?.kind === want ? u : this.nearestUnit(this.pick(ev), want, 2);
+        const picked = u?.kind === want || healOnMonster ? u : this.nearestUnit(this.pick(ev), want, 2);
         this.cancelTargeting();
         if (picked) {
           this.pendingNpc = null;
@@ -1514,4 +1646,26 @@ function dirFor(dx: number, dy: number, fallback: number): number {
 
 function chebyshev(ax: number, ay: number, bx: number, by: number): number {
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+}
+
+/** Caves, sewers and pyramids: underground maps with a black backdrop. */
+function isDungeon(map: string): boolean {
+  return /dun|sewb|pryd/.test(map);
+}
+
+/** A full-screen quad drawn last, blending a colour over the whole view. */
+function createScreenTint(): THREE.Mesh {
+  const mat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false });
+  // Position straight in clip space, so it always fills the screen.
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <project_vertex>",
+      "vec4 mvPosition = vec4(position, 1.0);\ngl_Position = vec4(position.xy, 0.0, 1.0);",
+    );
+  };
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1000;
+  mesh.visible = false;
+  return mesh;
 }

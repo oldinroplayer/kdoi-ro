@@ -27,6 +27,9 @@ type MobDef struct {
 	// (eAthena mode flag 8).
 	Assist bool
 
+	// Element, race, size and aggression, filled in from mob_db at start-up.
+	MobTraits
+
 	Drops []Drop
 }
 

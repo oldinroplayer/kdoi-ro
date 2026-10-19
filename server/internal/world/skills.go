@@ -19,6 +19,8 @@ type cast struct {
 	target uint32 // a monster for enemy skills, a player for self/friend skills
 	until  time.Time
 	resume uint32 // monster to go back to auto-attacking afterwards
+	// onMonster: a friend skill aimed at a monster (Heal on the undead).
+	onMonster bool
 }
 
 // LearnSkill spends a skill point on a skill.
@@ -58,6 +60,7 @@ var (
 	errWrongWeapon = errors.New("wrong weapon for this skill")
 	errNoZeny      = errors.New("not enough zeny")
 	errBadTarget   = errors.New("invalid target")
+	errNotUndead   = errors.New("heal only hurts undead monsters")
 )
 
 // skillReach is how far (in cells) a skill reaches: a negative skill range is
@@ -111,6 +114,12 @@ func (w *World) startSkill(p *Player, skillID, level int, targetID uint32, now t
 	case game.TargetFriend:
 		if other := w.players[targetID]; other != nil && other.m == p.m && !other.dead {
 			c.target = other.id
+		} else if mob := w.monsters[targetID]; mob != nil && mob.m == p.m && def.ID == game.SkillHeal {
+			// Heal burns the undead, as in RO; it does nothing to anything else.
+			if mob.def.Element != game.ElemUndead {
+				return errNotUndead
+			}
+			c.target, c.onMonster = mob.id, true
 		}
 	}
 	p.target = 0 // a skill replaces auto-attacking
@@ -128,7 +137,7 @@ func (w *World) startSkill(p *Player, skillID, level int, targetID uint32, now t
 
 // skillTarget returns where a cast's target stands, or false if it's gone.
 func (w *World) skillTarget(p *Player, c *cast) (x, y int, ok bool) {
-	if c.skill.Target == game.TargetEnemy {
+	if c.skill.Target == game.TargetEnemy || c.onMonster {
 		if mob := w.monsters[c.target]; mob != nil && mob.m == p.m {
 			return mob.x, mob.y, true
 		}
@@ -206,6 +215,7 @@ func (w *World) beginCast(p *Player, c *cast, now time.Time) {
 	}
 	c.until = now.Add(time.Duration(ms) * time.Millisecond)
 	p.casting = c
+	w.castSensed(p, now)
 	w.broadcast(p.m, proto.SkillCast(p.id, c.target, c.skill.ID, ms))
 }
 
@@ -248,8 +258,10 @@ func (w *World) finishSkill(p *Player, c *cast, now time.Time) {
 
 	motion := p.data.AttackMotion()
 	mob := w.monsters[c.target]
+	// Physical skills hit with their own element, or the weapon's (neutral) when
+	// skill_db gives none.
 	physical := func(pct, flat, hitBonus int) {
-		hit := p.data.SkillAttackMob(mob.def, w.rng, pct, flat, hitBonus)
+		hit := p.data.SkillAttackMob(mob.def, w.rng, pct, flat, hitBonus, def.Element)
 		p.nextAttack = now.Add(time.Duration(p.data.AttackDelay()) * time.Millisecond)
 		w.damageMonster(p, mob, hit, def.ID, 1, motion, now)
 	}
@@ -265,8 +277,8 @@ func (w *World) finishSkill(p *Player, c *cast, now time.Time) {
 		physical(100, 15*lv, 0)
 	case game.SkillDoubleStrafe:
 		// Two arrows, each rolled separately.
-		hit := p.data.SkillAttackMob(mob.def, w.rng, 100+10*lv, 0, 0)
-		if second := p.data.SkillAttackMob(mob.def, w.rng, 100+10*lv, 0, 0); !second.Miss {
+		hit := p.data.SkillAttackMob(mob.def, w.rng, 100+10*lv, 0, 0, def.Element)
+		if second := p.data.SkillAttackMob(mob.def, w.rng, 100+10*lv, 0, 0, def.Element); !second.Miss {
 			if hit.Miss {
 				hit = second
 			} else {
@@ -280,13 +292,16 @@ func (w *World) finishSkill(p *Player, c *cast, now time.Time) {
 		hits := def.SkillHits(lv)
 		var hit game.Hit
 		for range hits {
-			hit.Damage += p.data.MagicAttackMob(mob.def, w.rng).Damage
+			hit.Damage += p.data.MagicAttackMob(mob.def, w.rng, def.Element).Damage
 		}
 		w.damageMonster(p, mob, hit, def.ID, hits, 0, now)
 	case game.SkillMagnumBreak:
 		w.magnumBreak(p, lv, motion, now)
 	case game.SkillHeal:
-		if t := w.players[c.target]; t != nil {
+		if c.onMonster && mob != nil {
+			hit := game.Hit{Damage: p.data.HealDamage(mob.def, lv)}
+			w.damageMonster(p, mob, hit, def.ID, 1, 0, now)
+		} else if t := w.players[c.target]; t != nil {
 			w.heal(t, p.data.HealAmount(lv))
 		}
 	case game.SkillIncAgi, game.SkillBlessing:
@@ -317,7 +332,7 @@ func (w *World) magnumBreak(p *Player, lv, motion int, now time.Time) {
 	slices.SortFunc(near, func(a, b *Monster) int { return int(a.id) - int(b.id) })
 	knockback := game.Skills[game.SkillMagnumBreak].Knockback
 	for _, mob := range near {
-		hit := p.data.SkillAttackMob(mob.def, w.rng, 100+20*lv, 0, 10*lv)
+		hit := p.data.SkillAttackMob(mob.def, w.rng, 100+20*lv, 0, 10*lv, game.ElemFire)
 		w.damageMonster(p, mob, hit, game.SkillMagnumBreak, 1, motion, now)
 		if !hit.Miss && w.monsters[mob.id] != nil {
 			w.knockBack(&mob.unit, p.x, p.y, knockback)
@@ -371,6 +386,7 @@ func (w *World) applyBuff(t *Player, skillID, level, ms int, now time.Time) {
 	t.data.Buffs[skillID] = level
 	t.buffEnds[skillID] = now.Add(time.Duration(ms) * time.Millisecond)
 	t.out.Send(proto.BuffIcon(t.id, skillID, level, ms))
+	w.updateSpeed(t)
 	w.sendStatus(t)
 }
 
@@ -392,6 +408,7 @@ func (w *World) endBuff(p *Player, skillID int) {
 	delete(p.buffEnds, skillID)
 	delete(p.data.Buffs, skillID)
 	p.out.Send(proto.BuffIcon(p.id, skillID, 0, 0))
+	w.updateSpeed(p)
 }
 
 // clearBuffs ends every buff (when knocked out).
@@ -444,7 +461,31 @@ func skillMessage(err error) string {
 		return "Not enough zeny."
 	case errors.Is(err, errBadTarget):
 		return "Invalid target."
+	case errors.Is(err, errNotUndead):
+		return "Heal only hurts undead monsters."
 	default:
 		return "You can't use that skill."
+	}
+}
+
+// incAgiSpeedup is how much faster Increase AGI makes walking (eAthena 2004:
+// walk time per cell minus 25%).
+const incAgiSpeedup = 25
+
+// walkSpeed is a player's ms per straight cell, with buffs applied.
+func walkSpeed(c *game.CharData) int {
+	s := WalkSpeed
+	if c.Buffs[game.SkillIncAgi] > 0 {
+		s -= s * incAgiSpeedup / 100
+	}
+	return s
+}
+
+// updateSpeed applies buff changes to a player's walk speed and tells the map.
+// A walk in progress continues at the new pace from its next step.
+func (w *World) updateSpeed(p *Player) {
+	if s := walkSpeed(&p.data); s != p.speed {
+		p.speed = s
+		w.broadcast(p.m, proto.PlayerSpeed(p.id, s))
 	}
 }

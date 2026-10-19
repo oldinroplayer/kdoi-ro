@@ -47,8 +47,14 @@ type caseInsensitiveFS struct {
 }
 
 func newCaseInsensitiveFS(root string) (*caseInsensitiveFS, error) {
+	// The dev target links data/ to ro-client/data; walking doesn't follow a
+	// linked root, so resolve it first.
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
 	c := &caseInsensitiveFS{root: root, files: map[string]string{}}
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}

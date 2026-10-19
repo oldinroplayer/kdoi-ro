@@ -142,6 +142,10 @@ func TestHealAndIncreaseAgi(t *testing.T) {
 	if id, skill, lv, ms := r.U32(), int(r.U16()), int(r.U8()), int(r.U32()); id != self || skill != game.SkillIncAgi || lv != 1 || ms != 60000 {
 		t.Fatalf("Buff = %d %d %d %d", id, skill, lv, ms)
 	}
+	// Increase AGI also makes walking 25% faster, and the map is told.
+	if r := c.expect(proto.OpPlayerSpeed); r.U32() != self || r.U16() != 113 {
+		t.Fatal("expected PlayerSpeed 113 (150 ms per cell less 25%)")
+	}
 }
 
 func TestMagnumBreakKnocksBack(t *testing.T) {

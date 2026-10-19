@@ -95,7 +95,35 @@ export type ServerPacket =
   /** An item on the ground; sub-cell position 0-15; dropped = it just fell. */
   | { type: "floorItem"; id: number; itemId: number; amount: number; x: number; y: number; subX: number; subY: number; dropped: boolean }
   | { type: "floorItemGone"; id: number }
-  | { type: "pickUp"; id: number };
+  | { type: "pickUp"; id: number }
+  /** An emoticon over a unit's head (index into emotion.act). */
+  | { type: "emotion"; id: number; kind: number }
+  | { type: "partyInfo"; party: PartyInfo }
+  | { type: "partyInvited"; partyId: number; partyName: string; from: string }
+  | { type: "partyLeft" }
+  /** A unit's new walk speed (ms per straight cell), e.g. under Increase AGI. */
+  | { type: "speed"; id: number; speed: number };
+
+/** A party member as the party window shows it (offline: name only). */
+export interface PartyMember {
+  name: string;
+  online: boolean;
+  map: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  job: number;
+  baseLevel: number;
+}
+
+export interface PartyInfo {
+  id: number;
+  name: string;
+  leader: string;
+  evenExp: boolean;
+  members: PartyMember[];
+}
 
 /** A chat room's title, size and privacy. */
 export interface RoomSettings {
@@ -258,6 +286,25 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
       };
     case 0x8027:
       return { type: "floorItemGone", id: u32() };
+    case 0x802d:
+      return { type: "speed", id: u32(), speed: u16() };
+    case 0x802a: {
+      const id = u32(), name = str(), leader = str(), evenExp = u8() === 1, n = u8();
+      const members: PartyMember[] = [];
+      for (let i = 0; i < n; i++) {
+        members.push({
+          name: str(), online: u8() === 1, map: str(), x: u16(), y: u16(),
+          hp: u32(), maxHp: u32(), job: u16(), baseLevel: u16(),
+        });
+      }
+      return { type: "partyInfo", party: { id, name, leader, evenExp, members } };
+    }
+    case 0x802b:
+      return { type: "partyInvited", partyId: u32(), partyName: str(), from: str() };
+    case 0x802c:
+      return { type: "partyLeft" };
+    case 0x8029:
+      return { type: "emotion", id: u32(), kind: u8() };
     case 0x8028:
       return { type: "pickUp", id: u32() };
     case 0x801b:
@@ -531,6 +578,40 @@ export class Connection {
       }
     }
     this.ws?.send(new Uint8Array(parts));
+  }
+
+  createParty(name: string): void {
+    this.sendFields(0x001d, [name]);
+  }
+
+  inviteToParty(name: string): void {
+    this.sendFields(0x001e, [name]);
+  }
+
+  replyPartyInvite(partyId: number, accept: boolean): void {
+    this.sendFields(0x001f, [{ u32: partyId }, { u8: accept ? 1 : 0 }]);
+  }
+
+  leaveParty(): void {
+    this.sendFields(0x0020, []);
+  }
+
+  kickFromParty(name: string): void {
+    this.sendFields(0x0021, [name]);
+  }
+
+  partyChat(text: string): void {
+    this.sendFields(0x0022, [text]);
+  }
+
+  /** Even EXP share (true) or each take (false); leader only. */
+  setPartyExp(even: boolean): void {
+    this.sendFields(0x0023, [{ u8: even ? 1 : 0 }]);
+  }
+
+  /** Show an emoticon over our head (0..46). */
+  emote(kind: number): void {
+    this.sendFields(0x001c, [{ u8: kind }]);
   }
 
   /** Walk to an item on the ground and pick it up. */
