@@ -1,6 +1,7 @@
 package world
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -46,7 +47,29 @@ func TestExpRate(t *testing.T) {
 	if b, j := kill(); b != 15 || j != 10 {
 		t.Fatalf("x1.5 kill: %d/%d EXP, want 15/10", b, j)
 	}
-	if FormatExpRate(1.5) != "x1.5" || FormatExpRate(3) != "x3" {
-		t.Fatalf("format: %s %s", FormatExpRate(1.5), FormatExpRate(3))
+	if FormatRate(1.5) != "x1.5" || FormatRate(3) != "x3" {
+		t.Fatalf("format: %s %s", FormatRate(1.5), FormatRate(3))
+	}
+}
+
+func TestStatsAndDropRate(t *testing.T) {
+	if _, err := New(Config{Maps: map[string]*gat.Map{"field": openMap(t, 5, 5)}, SavePoint: Location{Map: "field", X: 1, Y: 1}, DropRate: 200}); err == nil {
+		t.Fatal("a drop rate over x100 should be refused")
+	}
+	w, err := New(Config{Maps: map[string]*gat.Map{"field": openMap(t, 5, 5)}, SavePoint: Location{Map: "field", X: 1, Y: 1}, ExpRate: 2, DropRate: 1.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.Run(ctx)
+	if _, err := w.Join("Hero", game.NewChar("field", 2, 2), discard{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.Stats(); got != (ServerStats{Players: 1, ExpRate: 2, DropRate: 1.5}) {
+		t.Fatalf("stats: %+v", got)
+	}
+	if err := w.SetDropRate(4); err != nil || w.DropRate() != 4 {
+		t.Fatalf("set drop rate: %v, now %v", err, w.DropRate())
 	}
 }

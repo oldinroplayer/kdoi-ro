@@ -92,6 +92,11 @@
       <form id="login-form" class="panel" autocomplete="on">
         <h1>KDoiRo</h1>
         <p class="subtitle">Enter a character name. New names are created as a Novice outside Payon Cave.</p>
+        <div id="server-stats" class="server-stats" aria-live="polite">
+          <span class="stat-status"><span class="stat-dot" aria-hidden="true"></span><span id="stat-online">Checking server…</span></span>
+          <span class="stat"><span class="stat-label">EXP</span> <strong id="stat-exp">–</strong></span>
+          <span class="stat"><span class="stat-label">Drop</span> <strong id="stat-drop">–</strong></span>
+        </div>
         <label>
           Character name
           <input id="name" name="username" autocomplete="username" required minlength="4" maxlength="23"

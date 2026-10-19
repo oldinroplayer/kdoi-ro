@@ -55,12 +55,16 @@ A minimal Ragnarok-style game server in Go, spoken to over WebSocket.
 - Server console: the terminal running the server takes commands —
   `exp <name> <base> [job]` gives an online character EXP live (with level ups
   and points), `zeny <name> <amount>` gives (or, negative, takes) zeny,
+  `reset <name> [stats|skills|all]` gives back their stat and/or skill points
+  (the Reset Maid at the Payon Cave camp does the same for free),
   `warpall <map> <x> <y>` moves every online player there now and every saved
   character there for their next login, `saveall <map> <x> <y>` sets everyone's
   respawn point there, `exprate [rate]` shows or sets the monster EXP rate
   live (`exprate 2` = x2, `1.5` works too; `-exp-rate 3` starts at x3),
+  `droprate [rate]` does the same for monster drop chances,
   `chatmode server|local` makes public chat reach everyone online or only
-  players within 14 cells (the default),
+  players within 14 cells (the default), `update` restarts into a newer build
+  without logging anyone out (below),
   `who` lists who's online, `help` lists them all.
 - Maps sleep while no player is on them: their monsters stop thinking,
   wandering and fighting until someone arrives, and stay frozen where they
@@ -130,7 +134,7 @@ Flags:
 
 | Flag | Default | |
 |---|---|---|
-| `-addr` | `:7000` | listen address; WebSocket at `/ws`, health check at `/healthz` |
+| `-addr` | `:7000` | listen address; WebSocket at `/ws`, health check at `/healthz`, players online and rates at `/status.json` |
 | `-data` | `../ro-client/data` | directory with `<map>.gat` files |
 | `-maps` | `morocc,moc_fild07,moc_fild06` | maps to load |
 | `-db` | `data/kdoiro.db` | SQLite character database (created if missing) |
@@ -138,10 +142,30 @@ Flags:
 | `-web` | (none) | built web client to serve at `/`, with `-data` served at `/data` (looked up case-insensitively) and `-bgm` at `/bgm`; empty = game API only (development uses Vite) |
 | `-bgm` | (none) | music folder served at `/bgm` when `-web` is set |
 | `-origins` | `localhost:*,127.0.0.1:*` | browser origins allowed to connect |
+| `-exp-rate` | `1` | monster EXP multiplier (the console's `exprate` changes it live) |
+| `-drop-rate` | `1` | monster drop chance multiplier, capped at a sure drop (the console's `droprate` changes it live) |
+| `-pidfile` | (none) | write the process ID here, so `./build.sh <target> --update` can signal it |
 
 ```bash
 go test -race ./...
 ```
+
+### Restarting without logging players out
+
+Every clean shutdown is resumable. That covers Ctrl-C, SIGTERM, closing the
+terminal (SIGHUP), and an update: SIGUSR1, or `update` in the server console,
+which `./build.sh dev --update` and `./dev.sh` (with a server already running)
+send.
+
+The server stops accepting connections and saves everyone. Each player gets a
+ServerUpdating packet with a one-time resume token, and the connection closes
+with code 4000. After an update the server exits with code 75 and `run.sh`
+starts the new build at once. After Ctrl-C, start it again within the wait.
+Meanwhile each page shows "Server restarting" and checks `/healthz` until a
+server answers (up to 30 s, then it offers to keep waiting). It then reloads
+into the current client, logs back in with the token, and turns auto attack
+back on if it was running. Characters come back where they were. Monsters,
+ground items, chat rooms, buffs and console settings start fresh.
 
 ## Protocol
 
@@ -185,6 +209,7 @@ Coordinates are map cells, `y = 0` at the south edge.
 | `0x0021` | PartyKick | `name str` (leader only) |
 | `0x0022` | PartyChat | `text str` |
 | `0x0023` | PartyEXP | `even u8` (leader only) |
+| `0x0024` | Resume | `token str` — instead of Login, after a ServerUpdating (one use, 2 minutes) |
 | `0x001B` | SetAppearance | `style u8` (1–19), `color u8` (0–8), `female u8` — change hairstyle, hair colour and gender; everyone on the map gets a PlayerLook |
 | `0x000F` | UseSkill | `skillId u16`, `level u16` (0 = highest learned), `targetId u32` (ignored for self skills) |
 | `0x000D` | Turn | `dir u8` — face a direction without moving (0 N, 1 NW … 7 NE); ignored while walking |
@@ -241,11 +266,13 @@ unreachable within 32 steps.
 | `0x802B` | PartyInvited | `partyId u32`, `partyName str`, `from str` |
 | `0x802C` | PartyLeft | — you're no longer in a party |
 | `0x802D` | PlayerSpeed | `id u32`, `speed u16` (ms per straight cell) — a player's walk speed changed (Increase AGI: 25% faster while it lasts) |
+| `0x802E` | ServerUpdating | `wait u16` (seconds), `token str` — the server is restarting into a new build; the connection then closes with code 4000. Wait for the server to answer again, reload and send Resume |
+| `0x802F` | Effect | `id u32`, `kind u8` — a one-off effect on a unit: `1` teleporting away (Fly/Butterfly Wing) |
 | `0x8018` | SkillUse | `src u32`, `target u32`, `skillId u16`, `level u8` — a skill went off (its effect follows, e.g. Heal) |
 
 LoginResult codes: `0` logged in, `1` character created, `2` wrong password,
 `3` invalid name (4–23 of `A-Z a-z 0-9 _`), `4` invalid password (4–72 bytes),
-`5` already online, `6` server error. After `0`/`1`, EnterMap follows, then a
+`5` already online, `6` server error, `7` resume token expired or used. After `0`/`1`, EnterMap follows, then a
 WarpPortal per warp and an NpcAppear per NPC on the map, then a PlayerAppear for
 everyone already there (plus a PlayerMove for anyone mid-walk), then Inventory
 and Status. Inventory and Status are re-sent in full after every change.

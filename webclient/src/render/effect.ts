@@ -15,8 +15,8 @@ export interface Effect {
 }
 
 const DURATION = 300; // ms
-const START_RADIUS = 10; // sprite pixels
-const END_RADIUS = 46;
+const START_RADIUS = 15; // sprite pixels
+const END_RADIUS = 69;
 const INNER = 0.55; // inner edge as a fraction of the outer radius
 const SQUASH = 0.45; // the ring is seen at an angle, so it's an ellipse
 const SEGMENTS = 40;

@@ -18,6 +18,7 @@ const slots = {
   shoes: 0x0040,
   accL: 0x0008,
   accR: 0x0080,
+  ammo: 0x8000,
 };
 
 const left: [number, string][] = [
@@ -39,6 +40,8 @@ export class EquipmentWindow {
   readonly window = new GameWindow("equipment", "Equipment", { x: 330, y: 120, width: 420 });
   private readonly leftCol = document.createElement("div");
   private readonly rightCol = document.createElement("div");
+  /** The arrow slot, under both columns (as in RO's window). */
+  private readonly ammoRow = document.createElement("div");
   private readonly preview = document.createElement("canvas");
   private dir = 0;
 
@@ -67,10 +70,11 @@ export class EquipmentWindow {
     center.append(this.preview, turn);
 
     layout.append(this.leftCol, center, this.rightCol);
+    this.ammoRow.className = "equip-ammo";
     const hint = document.createElement("p");
     hint.className = "window-hint";
     hint.textContent = "Double-click an item in your inventory to wear it; double-click here to take it off.";
-    this.window.body.append(layout, hint);
+    this.window.body.append(layout, this.ammoRow, hint);
 
     state.subscribe(() => this.window.isOpen && this.render());
     const open = this.window.open.bind(this.window);
@@ -83,6 +87,7 @@ export class EquipmentWindow {
   private render(): void {
     this.leftCol.replaceChildren(...left.map(([mask, label]) => this.slot(mask, label)));
     this.rightCol.replaceChildren(...right.map(([mask, label]) => this.slot(mask, label)));
+    this.ammoRow.replaceChildren(this.slot(slots.ammo, "Arrow"));
     void this.drawPreview();
   }
 
@@ -95,7 +100,7 @@ export class EquipmentWindow {
     text.className = "equip-name";
     if (worn && info) {
       row.append(
-        itemCell(info, 1, {
+        itemCell(info, worn.amount, {
           label: `${label}: ${info.name}`,
           action: "take off",
           onActivate: () => {
@@ -104,7 +109,8 @@ export class EquipmentWindow {
           },
         }),
       );
-      text.textContent = info.name;
+      // Arrows show how many are left.
+      text.textContent = mask === slots.ammo ? `${info.name} × ${worn.amount}` : info.name;
     } else {
       const empty = document.createElement("div");
       empty.className = "item-cell empty";

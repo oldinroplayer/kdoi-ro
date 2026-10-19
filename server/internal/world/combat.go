@@ -2,6 +2,7 @@ package world
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"kdoiro/server/internal/game"
@@ -182,6 +183,11 @@ func (w *World) regen(p *Player, now time.Time) {
 }
 
 func (w *World) playerHits(p *Player, mob *Monster, now time.Time) {
+	// A bow shoots one arrow a shot; with none worn the attack stops.
+	if p.data.NeedsArrows() && !w.useArrow(p) {
+		p.target = 0
+		return
+	}
 	p.nextAttack = now.Add(time.Duration(p.data.AttackDelay()) * time.Millisecond)
 	p.dir = dirFor(mob.x-p.x, mob.y-p.y)
 	hit := p.data.AttackMob(mob.def, w.rng)
@@ -316,6 +322,10 @@ func (w *World) UseItem(id uint32, index int) error {
 			p.out.Send(proto.Message("You can't do that while knocked out."))
 			return
 		}
+		if def, ok := itemAt(&p.data, index); ok && def.Type == game.TypeWarp {
+			w.useWing(p, index)
+			return
+		}
 		healed, err := p.data.UseItem(index, w.rng)
 		if err != nil {
 			p.out.Send(proto.Message(messageFor(err)))
@@ -325,4 +335,31 @@ func (w *World) UseItem(id uint32, index int) error {
 		w.sendInventory(p)
 		w.sendStatus(p)
 	})
+}
+
+// arrowsMessage is RO's notice for shooting without arrows.
+const arrowsMessage = "Please equip the proper ammunition first."
+
+// useArrow spends one of a player's worn arrows for a bow shot, updating
+// their inventory; false (with RO's notice) when they have none.
+func (w *World) useArrow(p *Player) bool {
+	left, err := p.data.UseArrow()
+	if err != nil {
+		p.out.Send(proto.Message(arrowsMessage))
+		return false
+	}
+	if left == 0 {
+		p.out.Send(proto.Message("You've run out of arrows."))
+	}
+	w.sendInventory(p)
+	if left == 0 {
+		w.sendStatus(p) // the arrows' ATK is gone
+	}
+	return true
+}
+
+// shootsArrow is whether a skill fires an arrow for this player: a bow skill
+// (Double Strafe) used with a bow.
+func shootsArrow(p *Player, def *game.SkillDef) bool {
+	return p.data.NeedsArrows() && slices.Contains(def.Weapons, game.WeaponBow)
 }

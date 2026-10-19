@@ -48,6 +48,7 @@ const (
 	OpPartyKick     uint16 = 0x0021
 	OpPartyChat     uint16 = 0x0022
 	OpPartyEXP      uint16 = 0x0023
+	OpResume        uint16 = 0x0024
 )
 
 // Server -> client opcodes.
@@ -97,7 +98,23 @@ const (
 	OpPartyInvited    uint16 = 0x802B
 	OpPartyLeft       uint16 = 0x802C
 	OpPlayerSpeed     uint16 = 0x802D
+	OpServerUpdating  uint16 = 0x802E
+	OpEffect          uint16 = 0x802F
 )
+
+// Effect kinds for OpEffect.
+const (
+	EffectTeleport uint8 = 1 // blue light and sound where a unit teleports away (wings)
+)
+
+// CloseUpdating is the WebSocket close code for "the server is restarting
+// for an update": the client waits for it and resumes (4000-4999 are free
+// for applications).
+const CloseUpdating = 4000
+
+// CloseReplaced is the close code for "your character logged in somewhere
+// else": a newer login took over this session.
+const CloseReplaced = 4001
 
 // ShopResult codes.
 const (
@@ -118,6 +135,7 @@ const (
 	LoginInvalidPassword uint8 = 4
 	LoginAlreadyOnline   uint8 = 5
 	LoginServerError     uint8 = 6
+	LoginResumeFailed    uint8 = 7 // resume token expired or already used
 )
 
 var ErrShort = errors.New("proto: packet too short")
@@ -209,6 +227,9 @@ func (r *Reader) Err() error { return r.err }
 // Client packets.
 
 type Login struct{ Name, Password string }
+
+// Resume logs back in with a token from ServerUpdating, after an update.
+type Resume struct{ Token string }
 
 type Move struct{ X, Y uint16 }
 
@@ -334,6 +355,8 @@ func Decode(b []byte) (any, error) {
 	switch op {
 	case OpLogin:
 		pkt = &Login{Name: r.String(), Password: r.String()}
+	case OpResume:
+		pkt = &Resume{Token: r.String()}
 	case OpMove:
 		pkt = &Move{X: r.U16(), Y: r.U16()}
 	case OpNpcClick:
@@ -618,6 +641,17 @@ func Status(s StatusInfo) []byte {
 // Message is a short notice for the player (e.g. why an action failed).
 func Message(text string) []byte {
 	return NewPacket(OpMessage).String(text).Bytes()
+}
+
+// Effect shows a one-off effect on a unit.
+func Effect(id uint32, kind uint8) []byte {
+	return NewPacket(OpEffect).U32(id).U8(kind).Bytes()
+}
+
+// ServerUpdating tells a client the server is restarting for an update: wait
+// up to waitSeconds for it to come back, then log in again with token.
+func ServerUpdating(waitSeconds int, token string) []byte {
+	return NewPacket(OpServerUpdating).U16(uint16(waitSeconds)).String(token).Bytes()
 }
 
 func boolU8(b bool) uint8 {

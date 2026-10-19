@@ -9,7 +9,9 @@ const (
 	TypeHealing ItemType = "healing"
 	TypeWeapon  ItemType = "weapon"
 	TypeArmor   ItemType = "armor"
-	TypeEtc     ItemType = "etc" // loot, only worth selling
+	TypeEtc     ItemType = "etc"  // loot, only worth selling
+	TypeAmmo    ItemType = "ammo" // arrows: worn as a stack, one used per bow shot
+	TypeWarp    ItemType = "warp" // wings: Warp says where they take you
 )
 
 // Equip locations, as RO's bitmask.
@@ -24,6 +26,7 @@ const (
 	SlotAccR    uint16 = 0x0080
 	SlotHeadTop uint16 = 0x0100
 	SlotHeadMid uint16 = 0x0200
+	SlotAmmo    uint16 = 0x8000 // arrows
 )
 
 // ItemDef is one entry of the item database. Display names, descriptions and
@@ -45,19 +48,32 @@ type ItemDef struct {
 	// WeaponType is eAthena's weapon class (1 dagger, 2 one-handed sword, 11 bow ...).
 	WeaponType int `json:"weaponType,omitempty"`
 	Range      int `json:"range,omitempty"` // weapon reach in cells (bows: 5)
+	// Element is the attack element arrows give bow shots (item_db bAtkEle);
+	// Crit adds critical rate (Sharp Arrow).
+	Element int `json:"element,omitempty"`
+	Crit    int `json:"crit,omitempty"`
+	// Warp is where a wing takes its user: WarpRandom or WarpSavePoint.
+	Warp string `json:"warp,omitempty"`
 	// Sprite names the equipment's sprite layer, for items shown on the
 	// character (weapons, shields, headgear): e.g. "단검" for a weapon's
 	// 초보자_남_단검.spr. Empty for items that don't change the sprite.
 	Sprite string `json:"sprite,omitempty"`
 }
 
+// Where wings (TypeWarp items) take you: item_db's warp "Random" / "SavePoint".
+const (
+	WarpRandom    = "random"     // Fly Wing: a random spot on the same map
+	WarpSavePoint = "save point" // Butterfly Wing: the save point
+)
+
 // SellPrice is what NPC shops pay: half the buy price, like RO.
 func (d ItemDef) SellPrice() int { return d.Price / 2 }
 
 func (d ItemDef) Equippable() bool { return d.Slot != 0 }
 
-// Stackable items share one inventory entry; equipment never stacks.
-func (d ItemDef) Stackable() bool { return !d.Equippable() }
+// Stackable items share one inventory entry; equipment never stacks, except
+// arrows, which are worn as a whole stack.
+func (d ItemDef) Stackable() bool { return !d.Equippable() || d.Type == TypeAmmo }
 
 // Items is the item database. Values follow rAthena's pre-renewal item_db.
 var Items = map[int]ItemDef{

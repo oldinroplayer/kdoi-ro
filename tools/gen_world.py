@@ -50,7 +50,12 @@ CITY_NAMES = {"Prontera": "prontera", "Izlude": "izlude", "Geffen": "geffen", "P
 # Shops of these kinds sell things KDoiRo doesn't have yet (pet eggs, taming items).
 SKIP_SHOPS = {"Pet Merchant"}
 # Weapon class -> the weapon's sprite layer name (as in items.go).
-WEAPON_SPRITES = {1: "단검", 2: "검", 11: "활"}
+# Weapon sprites by type (item_db View) under sprite/인간족/<job>/<job>_<sex>_<name>.
+# Many weapons have their own file named by item ID instead (e.g. 1116 Katana),
+# which the client uses when it exists (see weapon_sprite in main).
+WEAPON_SPRITES = {1: "단검", 2: "검", 3: "검", 4: "창", 5: "창", 6: "도끼", 7: "도끼", 8: "클럽", 10: "롯드", 11: "활"}
+# Jobs whose folders hold weapon sprites (Novice and the 1st jobs).
+JOB_FOLDERS = ["초보자", "검사", "마법사", "궁수", "성직자", "상인", "도둑"]
 NPC_ID_BASE = 51000
 
 # A Warper at the centre of every town (not in the 2004 data): the open cell
@@ -87,8 +92,20 @@ CAVE_CAMP = [
     ("Tool Dealer", 44, 137, 4),
     ("Weapon Dealer", 40, 126, 0),
     ("Armor Dealer", 44, 126, 0),
+    ("Reset Maid", 52, 137, 4),  # free stat and skill reset (world.KindReset)
 ]
 CAMP_ID_BASE = 54000
+# The camp's Weapon and Armor Dealers sell every weapon and armor any 2004 NPC
+# shop sells that Novices or 1st jobs can use, all for this many zeny.
+CAVE_CAMP_PRICE = 1
+# item_db Job bits for Novice and the six 1st jobs.
+FIRST_JOBS_MASK = 0x7F
+# Extra camp wares no 2004 NPC shop sold, by dealer: Goggles (2224).
+CAVE_CAMP_EXTRAS = {"Armor Dealer": [2224]}
+# A Kafra at the camp too (save point and teleports), in the row with the Job
+# Guide and Tool Dealer: (x, y, facing), and where saving puts you.
+CAVE_CAMP_KAFRA = (48, 137, 4)
+CAVE_CAMP_SAVE = (48, 134)
 
 # Starter monsters (levels 1-4, good to about base level 10) on the open
 # ground in front of Payon Cave, where new characters start. Not in the 2004
@@ -227,21 +244,48 @@ def parse_dealers():
 
 
 def dealer_stock(dealers, item_db):
-    """Drops what KDoiRo can't use yet: ammunition (bows don't use arrows) and,
-    at Tool Dealers, anything but HP healing items."""
+    """Drops what KDoiRo can't use yet: at Tool Dealers, anything but HP
+    healing items and wings."""
     out = {}
     for city, shops in dealers.items():
         for name, (cls, items) in shops.items():
             keep = []
             for i in items:
                 r = item_db.get(i)
-                if not r or num(r[3]) == 10:
+                if not r:
                     continue
-                if name == "Tool Dealer" and not heals(r):
+                if name == "Tool Dealer" and not heals(r) and not is_wing(r):
                     continue
                 keep.append(i)
             out.setdefault(city, {})[name] = (cls, keep)
     return out
+
+
+def camp_stock(item_db):
+    """The camp dealers' wares: every weapon and armor any 2004 NPC shop sells
+    that Novices or 1st jobs can use, by dealer, in item_db order."""
+    sold = set()
+    for line in read_lines(os.path.join(REF, "npc", "merchants", "shops.txt")):
+        p = tabs(line)
+        if len(p) >= 4 and p[1].strip() == "shop":
+            sold |= {int(x.split(":")[0]) for x in p[3].split(",")[1:]}
+    out = {"Weapon Dealer": [], "Armor Dealer": []}
+    for i in sorted(sold):
+        r = item_db.get(i)
+        if not r or not num(r[11]) & FIRST_JOBS_MASK:
+            continue
+        if num(r[3]) in (4, 10):  # weapons and their arrows
+            out["Weapon Dealer"].append(i)
+        elif num(r[3]) == 5:
+            out["Armor Dealer"].append(i)
+    for dealer, extras in CAVE_CAMP_EXTRAS.items():
+        out[dealer] = sorted(set(out[dealer]) | {i for i in extras if i in item_db})
+    return out
+
+
+def is_wing(r):
+    """Fly and Butterfly Wings: usable items whose script warps."""
+    return num(r[3]) == 2 and 'warp "' in ",".join(r[17:])
 
 
 def heals(r):
@@ -354,6 +398,12 @@ def main():
     def has_sprite(folder, name):
         return listing is None or f"sprite\\{folder}\\{name}.spr" in listing
 
+    def weapon_sprite(item_id, view):
+        """The weapon's own sprite (named by item ID) if any job has one, else its type's."""
+        if listing is not None and any(f"sprite\\인간족\\{j}\\{j}_남_{item_id}.spr" in listing for j in JOB_FOLDERS):
+            return str(item_id)
+        return WEAPON_SPRITES.get(view)
+
     loaded = set(all_maps()) | EXISTING
     mob_db, item_db = csv_rows("mob_db.txt"), csv_rows("item_db.txt")
     npc_names, headgear_names = exe_tables()
@@ -392,13 +442,22 @@ def main():
     for shops_of_city in dealers.values():
         for _, stock in shops_of_city.values():
             wanted |= set(stock)
+    camp = camp_stock(item_db)
+    for stock in camp.values():
+        wanted |= set(stock)
     items = {i: item_db[i] for i in sorted(wanted) if i in item_db}
     problems += [f"item {i} missing from item_db" for i in sorted(wanted) if i not in item_db]
 
     write_mobs(mobs, items)
-    write_items(items, headgear_names)
+    write_items(items, headgear_names, weapon_sprite)
     write_elements(mob_db, set(mobs))
-    write_world(spawns, shops, parse_kafras(loaded), parse_warps(loaded), npc_sprite, dealers)
+    kafras = parse_kafras(loaded)
+    # The camp Kafra dresses and teleports like Payon's own.
+    payon = next((k for k in kafras if k[0] == CAVE_CAMP_STOCK), None)
+    if payon and CAVE_CAMP_MAP in loaded:
+        x, y, d = CAVE_CAMP_KAFRA
+        kafras.append((CAVE_CAMP_MAP, x, y, d, payon[4], (CAVE_CAMP_MAP, *CAVE_CAMP_SAVE), payon[6]))
+    write_world(spawns, shops, kafras, parse_warps(loaded), npc_sprite, dealers, camp)
     for p in problems:
         print("note:", p)
     print(f"{len(all_maps())} maps, {len(spawns)} spawns of {len(mobs)} monsters, {len(items)} items, {len(shops)} shops")
@@ -490,7 +549,7 @@ def write_elements(mob_db, generated):
 HEAD_SLOTS = 0x100 | 0x200 | 0x001
 
 
-def write_items(items, headgear_names):
+def write_items(items, headgear_names, weapon_sprite):
     lines = [
         "// Code generated by tools/gen_world.py from reference/eathena-2004/db/item_db.txt; DO NOT EDIT.",
         "",
@@ -505,8 +564,12 @@ def write_items(items, headgear_names):
         typ = num(r[3])
         fields = [f"ID: {iid}", f"Name: {go_str(r[2].replace('_', ' '))}", f"Weight: {num(r[6]) // 10}", f"Price: {num(r[4])}"]
         heal = heals(r)
+        warp = re.search(r'warp\s+"(Random|SavePoint)"', ",".join(r[17:])) if typ == 2 else None
         if heal:
             fields += ["Type: TypeHealing", f"HealMin: {heal[0]}", f"HealMax: {heal[1]}"]
+        elif warp:
+            # Fly Wing (a random spot on the map) and Butterfly Wing (the save point).
+            fields += ["Type: TypeWarp", "Warp: " + ("WarpRandom" if warp.group(1) == "Random" else "WarpSavePoint")]
         elif typ in (4, 5):
             loc = num(r[13])
             fields += [f"Type: {'TypeWeapon' if typ == 4 else 'TypeArmor'}", f"Slot: {loc:#04x}"]
@@ -523,11 +586,25 @@ def write_items(items, headgear_names):
                 fields.append(f"WeaponType: {view}")
                 if num(r[9]) > 1:
                     fields.append(f"Range: {num(r[9])}")
-                if view in WEAPON_SPRITES:
-                    fields.append(f"Sprite: {go_str(WEAPON_SPRITES[view])}")
+                sprite = weapon_sprite(iid, view)
+                if sprite:
+                    fields.append(f"Sprite: {go_str(sprite)}")
             elif loc & HEAD_SLOTS and num(r[16]) in headgear_names:
                 # Headgear and masks: the client's accessory sprite for the item's View.
                 fields.append(f"Sprite: {go_str(headgear_names[num(r[16])])}")
+        elif typ == 10:
+            # Arrows: worn in the ammo slot; their element and critical bonus
+            # come from the item's script.
+            fields += ["Type: TypeAmmo", f"Slot: {num(r[13]):#04x}"]
+            if num(r[7]):
+                fields.append(f"Atk: {num(r[7])}")
+            if num(r[11]):
+                fields.append(f"Jobs: {num(r[11])}")
+            script = ",".join(r[17:])
+            if m := re.search(r"bAtkEle,\s*(\d+)", script):
+                fields.append(f"Element: {m.group(1)}")
+            if m := re.search(r"bCritical,\s*(\d+)", script):
+                fields.append(f"Crit: {m.group(1)}")
         else:
             fields.append("Type: TypeEtc")
         lines.append("\t{" + ", ".join(fields) + "},")
@@ -535,7 +612,7 @@ def write_items(items, headgear_names):
     write("server/internal/game/items_data.go", lines)
 
 
-def write_world(spawns, shops, kafras, warps, npc_sprite, dealers):
+def write_world(spawns, shops, kafras, warps, npc_sprite, dealers, camp):
     lines = [
         "// Code generated by tools/gen_world.py from reference/eathena-2004/npc; DO NOT EDIT.",
         "",
@@ -602,9 +679,15 @@ def write_world(spawns, shops, kafras, warps, npc_sprite, dealers):
         if name == "Job Guide":
             lines.append(head + f'Sprite: "1_m_jobguider", Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, Kind: world.KindJobChange}},')
             continue
+        if name == "Reset Maid":
+            lines.append(head + f'Sprite: "4_f_maid", Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, Kind: world.KindReset}},')
+            continue
         cls, stock = dealers[CAVE_CAMP_STOCK][name]
+        price = ""
+        if name in camp:  # every class's weapons or armor, at a token price
+            stock, price = camp[name], f", Price: {CAVE_CAMP_PRICE}"
         lines.append(head + f"Sprite: {go_str(npc_sprite(cls))}, Map: {go_str(CAVE_CAMP_MAP)}, X: {x}, Y: {y}, Dir: {facing}, "
-                     f"Shop: []int{{{', '.join(map(str, stock))}}}}},")
+                     f"Shop: []int{{{', '.join(map(str, stock))}}}{price}}},")
     lines += ["}", ""]
     # Morroc's hand-written dealers (main.go) add the 2004 stock to theirs.
     lines += ["// morroccDealerStock is Morroc's indoor 2004 dealer stock, by dealer name.",

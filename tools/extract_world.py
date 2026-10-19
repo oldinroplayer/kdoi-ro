@@ -29,6 +29,9 @@ GO = {
 }
 
 
+EFFECT_FOLDERS = ("data\\texture\\effect\\", "data\\sprite\\이팩트\\", "data\\wav\\effect\\")
+
+
 def read(rel):
     with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
         return f.read()
@@ -77,6 +80,8 @@ def main():
     # and msg (the critical hit starburst).
     wanted += [f"data\\sprite\\이팩트\\{n}.{ext}" for n in ("torch_01", "msg") for ext in ("spr", "act")]
     wanted += ["data\\wav\\effect\\ef_hit2.wav"]  # game.ts CRIT_SOUND
+    # Hit sounds by weapon (game.ts hitSound).
+    wanted += [f"data\\wav\\_hit_{w}.wav" for w in ("axe", "spear", "mace", "rod")]
     for r in names:
         wanted += [f"data\\texture\\유저인터페이스\\item\\{r}.bmp", f"data\\texture\\유저인터페이스\\collection\\{r}.bmp",
                    f"data\\sprite\\아이템\\{r}.spr", f"data\\sprite\\아이템\\{r}.act"]
@@ -84,6 +89,9 @@ def main():
     with open(grf, "rb") as f:
         entries = {e[0].lower(): e for e in grf_extract.read_table(f)}
         found = [entries[w.lower()] for w in wanted if w.lower() in entries]
+        # The client's whole effect library: skill textures and STR files, effect
+        # sprites and effect sounds (about 60 MB), so any skill's visuals load.
+        found += [e for k, e in entries.items() if k.startswith(EFFECT_FOLDERS)]
         missing = [w for w in wanted if w.lower() not in entries]
         grf_extract.extract_entries(f, found, out)
 

@@ -3,7 +3,9 @@ import { Game } from "./game";
 import { jobName } from "./render/character";
 import { ItemDb } from "./items";
 import { SkillDb } from "./skills";
-import { Connection, LoginCode, loginMessages, type ServerPacket } from "./net";
+import { CLOSE_UPDATING, Connection, LoginCode, loginMessages, type ServerPacket } from "./net";
+import { clearResume, loadResume, saveResume, UpdateOverlay, waitForServer } from "./update";
+import { ServerStatsLine } from "./serverstats";
 import { PlayerState } from "./state";
 import { formatZeny, hideTooltip, toast } from "./ui/common";
 import { EquipmentWindow } from "./ui/equipment";
@@ -41,6 +43,10 @@ if (!import.meta.hot) {
   serverInput.value = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 }
 const errorText = $("login-error");
+// Players online and the rates, refreshed while the login screen is up.
+const serverStats = new ServerStatsLine($("server-stats"), () => serverInput.value.trim());
+serverStats.start();
+serverInput.addEventListener("change", () => void serverStats.refresh());
 const button = $<HTMLButtonElement>("login-button");
 const hud = $("hud");
 const hudName = $("hud-name");
@@ -204,6 +210,9 @@ function handleUiPacket(p: ServerPacket): boolean {
       return true;
     case "shopResult":
       shop.result(p.code);
+      return true;
+    case "serverUpdating":
+      prepareForUpdate(p.wait, p.token);
       return true;
     case "message":
       toast(p.text);
@@ -435,18 +444,34 @@ function showLogin(error = "") {
   hud.hidden = true;
   setStatus("");
   loginOverlay.hidden = false;
+  serverStats.start();
   errorText.textContent = error;
   button.disabled = false;
   passwordInput.focus();
 }
 
-form.addEventListener("submit", async (ev) => {
+form.addEventListener("submit", (ev) => {
   ev.preventDefault();
   audio.unlock(); // the login click is the user gesture browsers need for sound
+  const name = nameInput.value.trim();
+  const password = passwordInput.value;
+  void enterGame(serverInput.value.trim(), name, (c) => c.login(name, password));
+});
+
+/** The server we're playing on (its WebSocket URL), for resuming after an update. */
+let currentServer = "";
+/** Set by ServerUpdating: the close that follows means "wait", not "logged out". */
+let updateWait = 0;
+const updateOverlay = new UpdateOverlay();
+
+/**
+ * Connects (if needed), sends the login (a password or, after an update, a
+ * resume token) and starts the game on success. onRejected runs when the
+ * server says no, before the login form shows the reason.
+ */
+async function enterGame(serverUrl: string, name: string, sendLogin: (c: Connection) => void, onJoined?: () => void, onRejected?: () => void) {
   errorText.textContent = "";
   button.disabled = true;
-  const name = nameInput.value.trim();
-  const serverUrl = serverInput.value.trim();
 
   try {
     if (!conn?.connected) {
@@ -455,9 +480,12 @@ form.addEventListener("submit", async (ev) => {
     }
   } catch (err) {
     conn = null;
+    onRejected?.();
     showLogin((err as Error).message);
     return;
   }
+  currentServer = serverUrl;
+  updateWait = 0;
 
   // Skill and item data load alongside the map; windows render once ready.
   if (!state.skillDb) {
@@ -485,8 +513,12 @@ form.addEventListener("submit", async (ev) => {
   }
 
   const c = conn;
-  c.onClose = (reason) => {
+  c.onClose = (reason, code) => {
     if (conn === c) conn = null;
+    if (code === CLOSE_UPDATING && updateWait > 0) {
+      waitForUpdate(serverUrl, updateWait);
+      return;
+    }
     showLogin(reason);
   };
   c.onPacket = (p) => {
@@ -497,6 +529,7 @@ form.addEventListener("submit", async (ev) => {
     if (p.type !== "loginResult") return;
     if (p.code === LoginCode.OK || p.code === LoginCode.Created) {
       loginOverlay.hidden = true;
+      serverStats.stop();
       hud.hidden = false;
       hudName.textContent = name;
       state.name = name;
@@ -515,12 +548,72 @@ form.addEventListener("submit", async (ev) => {
       game.selfName = name;
       minimap.start();
       hotbar.show(name);
+      onJoined?.();
     } else {
+      onRejected?.();
+      if (loginOverlay.hidden) showLogin(); // resuming: the form wasn't up
       errorText.textContent = loginMessages[p.code] ?? `Login failed (${p.code}).`;
       button.disabled = false;
     }
   };
-  c.login(name, passwordInput.value);
-});
+  sendLogin(c);
+}
+
+/** The server said it's updating: remember how to get back in. */
+function prepareForUpdate(wait: number, token: string) {
+  updateWait = wait;
+  saveResume({
+    token,
+    name: state.name,
+    server: currentServer,
+    bot: bot.running,
+    // The token lasts 2 minutes on the server; the wait plus a reload fits.
+    until: Date.now() + 110_000,
+  });
+  bot.stop();
+  updateOverlay.waiting(wait);
+}
+
+/** Waits for the new server, then reloads into the new client and resumes. */
+function waitForUpdate(serverUrl: string, seconds: number) {
+  updateOverlay.waiting(seconds);
+  waitForServer(
+    serverUrl,
+    seconds,
+    () => location.reload(),
+    () =>
+      updateOverlay.stuck(
+        () => waitForUpdate(serverUrl, 30),
+        () => {
+          clearResume();
+          updateOverlay.hide();
+          showLogin("The server isn't back yet. Try logging in again in a moment.");
+        },
+      ),
+  );
+}
+
+// Back from an update's reload: log in again with the saved token.
+const resume = loadResume();
+if (resume) {
+  clearResume(); // single use, whatever happens next
+  serverInput.value = resume.server;
+  nameInput.value = resume.name;
+  updateOverlay.rejoining();
+  // Sound needs a user gesture after a reload: the first click brings it back.
+  window.addEventListener("pointerdown", () => audio.unlock(), { once: true });
+  window.addEventListener("keydown", () => audio.unlock(), { once: true });
+  void enterGame(
+    resume.server,
+    resume.name,
+    (c) => c.resume(resume.token),
+    () => {
+      updateOverlay.hide();
+      toast("The server restarted. Welcome back!");
+      if (resume.bot) bot.start();
+    },
+    () => updateOverlay.hide(),
+  );
+}
 
 nameInput.focus();

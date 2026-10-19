@@ -44,8 +44,13 @@ func (c *CharData) skillRegenSP(maxSP int) int {
 }
 
 // SkillAttackMob resolves a physical attack skill of an element: damage is
-// pct% of a normal hit plus flat, and accuracy gets hitBonus percent.
+// pct% of a normal hit plus flat, and accuracy gets hitBonus percent. A skill
+// without an element of its own (neutral) hits with the weapon's, so Double
+// Strafe takes its arrows' element.
 func (c *CharData) SkillAttackMob(m *MobDef, r Rand, pct, flat, hitBonus, element int) Hit {
+	if element == ElemNeutral {
+		element = c.attackElement()
+	}
 	return c.attackMob(m, r, pct, flat, hitBonus, element)
 }
 

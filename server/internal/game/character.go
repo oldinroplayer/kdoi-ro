@@ -309,6 +309,21 @@ func (c *CharData) UseItem(index int, r Rand) (int, error) {
 	return c.HP - before, nil
 }
 
+// UseWarpItem spends one wing and returns where it takes the character
+// (WarpRandom or WarpSavePoint); the world does the moving.
+func (c *CharData) UseWarpItem(index int) (string, error) {
+	it := c.entry(index)
+	if it == nil {
+		return "", ErrNoSuchItem
+	}
+	def := Items[it.ItemID]
+	if def.Type != TypeWarp {
+		return "", ErrNotUsable
+	}
+	c.removeAmount(index, 1)
+	return def.Warp, nil
+}
+
 func (c *CharData) removeAmount(index, amount int) {
 	for i := range c.Inventory {
 		if c.Inventory[i].Index != index {
@@ -469,11 +484,16 @@ func (c *CharData) Derive() Derived {
 		MaxWeight: c.MaxWeight(),
 	}
 	weapon, reach := WeaponFist, 1
+	var arrow ItemDef
 	for _, it := range c.Inventory {
 		if it.Equip == 0 {
 			continue
 		}
 		def := Items[it.ItemID]
+		if def.Type == TypeAmmo {
+			arrow = def // counts only with a bow, below
+			continue
+		}
 		d.Atk2 += def.Atk
 		d.Def += def.Def
 		if def.Type == TypeWeapon {
@@ -482,12 +502,64 @@ func (c *CharData) Derive() Derived {
 		}
 	}
 	d.WeaponType, d.Range = weapon, reach
+	if weapon == WeaponBow {
+		// Bows draw on DEX the way melee weapons draw on STR (pre-renewal),
+		// and the arrows' ATK and critical bonus add to the bow's.
+		d.Atk = s[DEX] + (s[DEX]/10)*(s[DEX]/10) + s[STR]/5 + s[LUK]/5
+		d.Atk2 += arrow.Atk
+		d.Crit += arrow.Crit
+	}
 	c.applyPassives(&d)
 	// Attack speed from the job's base delay for the weapon type (eAthena pc.c).
 	baseDelay := job.AttackDelay[weapon]
 	delay := baseDelay - baseDelay*(4*s[AGI]+s[DEX])/1000
 	d.Aspd = 200 - delay/10
 	return d
+}
+
+// ErrNoArrows means a bow attack was tried without arrows worn.
+var ErrNoArrows = errors.New("no arrows equipped")
+
+// Arrow is the arrow stack worn (ok false when none).
+func (c *CharData) Arrow() (it InvItem, def ItemDef, ok bool) {
+	for _, it := range c.Inventory {
+		if it.Equip&SlotAmmo != 0 {
+			return it, Items[it.ItemID], true
+		}
+	}
+	return InvItem{}, ItemDef{}, false
+}
+
+// NeedsArrows is whether the character's weapon shoots arrows (a bow).
+func (c *CharData) NeedsArrows() bool {
+	for _, it := range c.Inventory {
+		if it.Equip&SlotHandR != 0 {
+			return Items[it.ItemID].WeaponType == WeaponBow
+		}
+	}
+	return false
+}
+
+// UseArrow spends one worn arrow; it reports how many are left (the stack is
+// gone at 0).
+func (c *CharData) UseArrow() (left int, err error) {
+	it, _, ok := c.Arrow()
+	if !ok {
+		return 0, ErrNoArrows
+	}
+	c.removeAmount(it.Index, 1)
+	return it.Amount - 1, nil
+}
+
+// attackElement is the element of the character's weapon attacks: a bow's
+// arrows give theirs; everything else is neutral for now.
+func (c *CharData) attackElement() int {
+	if c.NeedsArrows() {
+		if _, def, ok := c.Arrow(); ok {
+			return def.Element
+		}
+	}
+	return ElemNeutral
 }
 
 // Look is the equipment visible on a character's sprite, as item IDs (0 = none).

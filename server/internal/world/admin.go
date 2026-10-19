@@ -41,15 +41,57 @@ func (w *World) Online() []OnlinePlayer {
 	return out
 }
 
-// MaxExpRate caps the server EXP rate (x100).
+// MaxExpRate caps the server EXP and drop rates (x100).
 const MaxExpRate = 100
 
-// expRatePercent turns a multiplier (1.5 = x1.5) into whole percent.
-func expRatePercent(rate float64) (int, error) {
+// ratePercent turns a multiplier (1.5 = x1.5) into whole percent; what names
+// the rate in the error ("EXP", "drop").
+func ratePercent(what string, rate float64) (int, error) {
 	if !(rate > 0 && rate <= MaxExpRate) {
-		return 0, fmt.Errorf("EXP rate must be above 0 and at most x%d", MaxExpRate)
+		return 0, fmt.Errorf("%s rate must be above 0 and at most x%d", what, MaxExpRate)
 	}
 	return max(int(math.Round(rate*100)), 1), nil
+}
+
+func expRatePercent(rate float64) (int, error) { return ratePercent("EXP", rate) }
+
+// DropRate is the current monster drop chance multiplier (1 = x1).
+func (w *World) DropRate() float64 {
+	var pct int
+	w.do(func() { pct = w.dropRate })
+	return float64(pct) / 100
+}
+
+// SetDropRate multiplies every monster drop's chance from now on (2 = "x2",
+// capped at a sure drop) and tells everyone online.
+func (w *World) SetDropRate(rate float64) error {
+	pct, err := ratePercent("drop", rate)
+	if err != nil {
+		return err
+	}
+	return w.do(func() {
+		w.dropRate = pct
+		msg := proto.Message("Server drop rate is now " + FormatRate(float64(pct)/100) + ".")
+		for _, p := range w.players {
+			p.out.Send(msg)
+		}
+	})
+}
+
+// ServerStats is what the login screen shows about the server.
+type ServerStats struct {
+	Players  int     `json:"players"`
+	ExpRate  float64 `json:"expRate"`
+	DropRate float64 `json:"dropRate"`
+}
+
+// Stats reports how many are online and the current rates.
+func (w *World) Stats() ServerStats {
+	var s ServerStats
+	w.do(func() {
+		s = ServerStats{Players: len(w.players), ExpRate: float64(w.expRate) / 100, DropRate: float64(w.dropRate) / 100}
+	})
+	return s
 }
 
 // ExpRate is the current monster EXP multiplier (1 = x1).
@@ -68,15 +110,15 @@ func (w *World) SetExpRate(rate float64) error {
 	}
 	return w.do(func() {
 		w.expRate = pct
-		msg := proto.Message("Server EXP rate is now " + FormatExpRate(float64(pct)/100) + ".")
+		msg := proto.Message("Server EXP rate is now " + FormatRate(float64(pct)/100) + ".")
 		for _, p := range w.players {
 			p.out.Send(msg)
 		}
 	})
 }
 
-// FormatExpRate writes a multiplier the way players say it: "x2", "x1.5".
-func FormatExpRate(rate float64) string {
+// FormatRate writes a rate multiplier the way players say it: "x2", "x1.5".
+func FormatRate(rate float64) string {
 	return "x" + strconv.FormatFloat(rate, 'f', -1, 64)
 }
 

@@ -4,7 +4,7 @@ import { fetchData, loadKeyedCanvas } from "./assets";
 
 export interface ItemInfo {
   id: number;
-  type: "healing" | "weapon" | "armor";
+  type: "healing" | "weapon" | "armor" | "ammo" | "warp" | "etc";
   slot: number; // equip location bitmask, 0 if not equippable
   atk: number;
   def: number;
@@ -14,6 +14,8 @@ export interface ItemInfo {
   name: string;
   resName: string; // Korean resource name used for icon files
   description: string; // may contain RO colour codes (^RRGGBB)
+  /** Arrows: the element they give bow shots (0 neutral, 3 fire...). */
+  element?: number;
   /** Sprite layer name for equipment shown on the character, e.g. "단검". */
   sprite: string;
 }

@@ -30,6 +30,7 @@ import {
   type Anchor,
 } from "./render/skilleffects";
 import { loadEffectAssets, loadItemAssets, playerAttackGroup } from "./render/character";
+import { ArrowStreak, FadeColumn, FireBlast, FlashCross, RisingStreaks } from "./render/rofx";
 import { loadTexture } from "./render/textures";
 import { Skill } from "./skills";
 import { Portal } from "./render/portal";
@@ -203,6 +204,8 @@ const BACKGROUND = 0x0e0d12;
  * shade of its colour, for the gloom of the cave. */
 const DUNGEON_TINT_STRENGTH = 1.5;
 const DUNGEON_TINT_SHADE = 0.6;
+/** Sprite pixels above the head where a multi-hit attack's yellow total shows. */
+const COMBO_RAISE = 28;
 /** msg.spr's frame with the red starburst critical hits are drawn on. */
 const CRIT_BURST_FRAME = 3;
 /** Played on top of the hit sound for critical hits. The 2004 client has no
@@ -240,6 +243,8 @@ export class Game {
   private portalCells: [number, number][] = [];
   /** Bumped on every map change, so late-loading sprites for an old map are dropped. */
   private mapGeneration = 0;
+  /** We just teleported with a wing: show the light around us once we arrive. */
+  private teleportArrival = false;
   /** NPC we're walking towards to talk to, and when we set off. */
   private pendingNpc: number | null = null;
   private pendingSince = 0;
@@ -419,6 +424,20 @@ export class Game {
         if (u) this.setSpeed(u, p.speed, performance.now());
         break;
       }
+      case "effect": {
+        const u = this.units.get(p.id);
+        if (!u || p.kind !== 1) break;
+        // Teleporting (wings): RO's blue light (ring_blue) and ef_teleportation.
+        // Others see it where the unit vanishes; we see it around us on arrival.
+        audio.play("effect/ef_teleportation.wav", this.volumeAt(u));
+        if (p.id === this.selfId) {
+          this.teleportArrival = true;
+        } else {
+          const at = this.anchorOf(u)(); // a fixed spot: the unit is about to vanish
+          this.playTeleportLight(() => at);
+        }
+        break;
+      }
       case "emotion": {
         const u = this.units.get(p.id);
         if (u) {
@@ -516,6 +535,11 @@ export class Game {
       this.selfId = p.selfId;
       // The server doesn't echo our own name in EnterMap; the login screen tells us.
       await this.addPlayer(p.selfId, this.selfName, p.job, p.speed, p.x, p.y, p.dir, false, p.look, false);
+      if (this.teleportArrival) {
+        this.teleportArrival = false;
+        const self = this.units.get(this.selfId);
+        if (self) this.playTeleportLight(this.anchorOf(self));
+      }
 
       // Load every monster sprite the map needs before showing them.
       this.hud.setStatus("Loading monsters…");
@@ -833,17 +857,48 @@ export class Game {
     const spacing = magic ? 200 : 150;
     const each = Math.floor(p.damage / hits);
     const kind = p.miss ? "miss" : p.target === this.selfId ? "hurt" : p.crit ? "crit" : "damage";
+    // Bows shoot an arrow per blow, landing as its number shows.
+    if (!magic && src && this.shootsArrows(src)) {
+      const flight = Math.max(first * 0.6, 90);
+      for (let i = 0; i < hits; i++) this.playArrow(src, target, flight, first - flight + i * spacing);
+    }
+    // Several blows on a monster also count up a yellow total over its head,
+    // as the client does for Double Attack and multi-hit skills.
+    const combo = hits > 1 && !p.miss && p.damage > 0 && target.kind === "monster";
+    const comboAnchor = combo ? this.anchorOf(target, HEAD_HEIGHT + COMBO_RAISE) : null;
+    let comboEl: HTMLElement | undefined;
     for (let i = 0; i < hits; i++) {
       const amount = i === hits - 1 ? p.damage - each * (hits - 1) : each;
       const text = p.miss ? "Miss" : String(amount);
+      const runningTotal = i === hits - 1 ? p.damage : each * (i + 1);
       setTimeout(() => {
         if (this.disposed) return;
         this.floats.spawn(text, kind, this.headOf(target));
+        if (comboAnchor) comboEl = this.floats.combo(runningTotal, comboAnchor, i === hits - 1, comboEl);
         if (!p.miss) this.playHit(p.skillId, i, src, target);
         // A critical lands harder: an extra heavy impact over the weapon's hit.
         if (p.crit && i === 0) audio.play(CRIT_SOUND, this.volumeAt(target));
       }, first + i * spacing);
     }
+  }
+
+  /** The blue light of a teleport (texture/effect/ring_blue.tga). */
+  private playTeleportLight(anchor: Anchor) {
+    void this.whenLoaded(loadTexture("texture/effect/ring_blue.tga"), (tex) => new RingCylinder(tex, anchor));
+  }
+
+  /** Whether a unit attacks with a bow (players holding one). */
+  private shootsArrows(u: Unit): boolean {
+    const weapon = u.kind === "player" ? (u.look?.weapon ?? 0) : 0;
+    return weapon >= 1700 && weapon < 1750;
+  }
+
+  /** One arrow streak (texture/effect/allow_a.bmp) from a unit's chest to the target's. */
+  private playArrow(src: Unit, target: Unit, ms: number, delay: number) {
+    void this.whenLoaded(
+      loadTexture("texture/effect/allow_a.bmp"),
+      (tex) => new ArrowStreak(tex, this.anchorOf(src, BODY_HEIGHT), this.anchorOf(target, BODY_HEIGHT), ms, Math.max(delay, 0)),
+    );
   }
 
   /** The sound and effect of one blow landing. */
@@ -866,10 +921,14 @@ export class Game {
         audio.play("effect/thief_invenom.wav", volume);
         break;
       case Skill.Bash:
+        // RO draws Bash as a white flash across the target (alpha_center.tga).
+        void this.whenLoaded(loadTexture("texture/effect/alpha_center.tga"), (tex) => new FlashCross(tex, this.anchorOf(target, BODY_HEIGHT), 0xfff4d0));
         audio.play("effect/ef_bash.wav", volume);
         break;
       case Skill.Mammonite:
-        audio.play("effect/ef_coin1.wav", volume);
+        // A hand grabbing coins out of a purse, with coins spilling (maemor.str).
+        void this.playStr("maemor", target, BODY_HEIGHT);
+        audio.play("effect/ef_coin2.wav", volume);
         break;
       default:
         audio.play(this.hitSound(src), volume);
@@ -885,19 +944,25 @@ export class Game {
     const volume = this.volumeAt(target);
     switch (p.skillId) {
       case Skill.MagnumBreak:
+        // A blast of fire bursting out around the caster (대폭발.tga).
         if (!src.dead) src.oneShot = { group: this.attackGroup(src), start: performance.now(), duration: 400 };
-        void this.playStr("fire", src, 0);
+        void this.whenLoaded(loadTexture("texture/effect/대폭발.tga"), (tex) => new FireBlast(tex, this.anchorOf(src)));
         audio.play("effect/ef_magnumbreak.wav", this.volumeAt(src));
         break;
       case Skill.Heal:
-        this.addEffect(new LightColumn(this.anchorOf(target), 0xa8ffb0));
+        // A column of light on the target, bright at its feet (alpha_down.tga).
+        void this.whenLoaded(loadTexture("texture/effect/alpha_down.tga"), (tex) => new FadeColumn(tex, this.anchorOf(target), 0xc8ffd4));
         audio.play("_heal_effect.wav", volume);
         break;
       case Skill.IncAgi:
-        // RO's blue streaks of light shooting up around the target, with "AGI Up" rising out.
-        void this.whenLoaded(loadTexture("texture/effect/ring_blue.tga"), (tex) => new RingCylinder(tex, this.anchorOf(target)));
+        // Blue streaks of light shooting up around the target (ac_center2.tga), with "AGI Up" rising out.
+        void this.whenLoaded(loadTexture("texture/effect/ac_center2.tga"), (tex) => new RisingStreaks(tex, this.anchorOf(target), 0x5aa8ff));
         void this.playRisingImage("texture/effect/agi_up.bmp", target);
         audio.play("effect/ef_incagility.wav", volume);
+        break;
+      case Skill.DoubleStrafe:
+        // The shot's flash at the archer (arrowshot.str); the two arrows fly with the hits.
+        void this.playStr("arrowshot", src, BODY_HEIGHT);
         break;
       case Skill.Blessing:
         void this.playSprite("축복", target);
@@ -1097,6 +1162,10 @@ export class Game {
     if (weapon >= 1700 && weapon < 1800) return "_hit_arrow.wav";
     if (weapon >= 1100 && weapon < 1200) return "_hit_sword.wav";
     if (weapon >= 1200 && weapon < 1300) return "_hit_dagger.wav";
+    if (weapon >= 1300 && weapon < 1400) return "_hit_axe.wav";
+    if (weapon >= 1400 && weapon < 1500) return "_hit_spear.wav";
+    if (weapon >= 1500 && weapon < 1600) return "_hit_mace.wav";
+    if (weapon >= 1600 && weapon < 1700) return "_hit_rod.wav";
     return `_enemy_hit_normal${n}.wav`; // bare hands
   }
 

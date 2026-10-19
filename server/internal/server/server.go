@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,12 +44,56 @@ type Server struct {
 	spawn          Spawn
 	originPatterns []string
 	wg             sync.WaitGroup
+
+	mu sync.Mutex
+	// players maps each logged-in session to its character's name.
+	players map[*session]string
 }
 
 // New creates a server. originPatterns lists allowed browser origins
 // (host patterns such as "localhost:*"); same-origin is always allowed.
 func New(ctx context.Context, store *account.Store, w *world.World, spawn Spawn, originPatterns []string) *Server {
-	return &Server{ctx: ctx, store: store, world: w, spawn: spawn, originPatterns: originPatterns}
+	return &Server{ctx: ctx, store: store, world: w, spawn: spawn, originPatterns: originPatterns, players: map[*session]string{}}
+}
+
+// ResumeTTL is how long a resume token from an update stays good: the wait
+// the client is told, plus time for a slow page reload.
+const ResumeTTL = 2 * time.Minute
+
+// BeginUpdate tells every logged-in player the server is restarting for an
+// update and hands each a one-time resume token, then closes their
+// connections with CloseUpdating. Closing makes each session save its
+// character as usual. Call it once new connections are no longer accepted, so
+// the clients' wait ends on the new server, not this one. It returns once
+// every connection has closed (or timed out closing).
+func (s *Server) BeginUpdate(waitSeconds int) {
+	s.mu.Lock()
+	sessions := make(map[*session]string, len(s.players))
+	for sess, name := range s.players {
+		sessions[sess] = name
+	}
+	s.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for sess, name := range sessions {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			token, err := s.store.IssueResumeToken(name, ResumeTTL)
+			if err != nil {
+				sess.log.Error("resume token", "err", err)
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+				err = sess.conn.Write(ctx, websocket.MessageBinary, proto.ServerUpdating(waitSeconds, token))
+				cancel()
+				if err != nil {
+					sess.log.Warn("send update notice", "err", err)
+				}
+			}
+			sess.conn.Close(proto.CloseUpdating, "server updating")
+		}()
+	}
+	wg.Wait()
 }
 
 // Wait blocks until every session has ended and saved its character.
@@ -68,9 +113,39 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sess := &session{conn: conn, out: make(chan []byte, outboxSize), cancel: cancel, log: slog.With("remote", r.RemoteAddr)}
+	sess := &session{conn: conn, out: make(chan []byte, outboxSize), cancel: cancel, log: slog.With("remote", r.RemoteAddr), done: make(chan struct{})}
+	defer close(sess.done)
 	status, reason := s.run(ctx, sess)
 	conn.Close(status, reason)
+}
+
+// replaceWait is how long a login waits for the session it takes over to
+// save its character and end.
+const replaceWait = 10 * time.Second
+
+// takeOver ends the session playing a character (a newer login wins) and
+// waits for it to save. It reports false if the old session didn't end in time.
+func (s *Server) takeOver(name string) bool {
+	s.mu.Lock()
+	var old *session
+	for sess, n := range s.players {
+		if strings.EqualFold(n, name) {
+			old = sess
+			break
+		}
+	}
+	s.mu.Unlock()
+	if old == nil {
+		return true // already gone
+	}
+	old.log.Info("replaced by a new login")
+	go old.conn.Close(proto.CloseReplaced, "Your character logged in from another place.")
+	select {
+	case <-old.done:
+		return true
+	case <-time.After(replaceWait):
+		return false
+	}
 }
 
 type session struct {
@@ -78,6 +153,8 @@ type session struct {
 	out    chan []byte
 	cancel context.CancelFunc
 	log    *slog.Logger
+	// done closes once the session has ended and saved its character.
+	done chan struct{}
 }
 
 // Send queues a packet; a client too slow to keep up is disconnected.
@@ -114,8 +191,14 @@ func (s *Server) run(ctx context.Context, sess *session) (websocket.StatusCode, 
 	}
 	sess.log = sess.log.With("char", char.Name, "id", id)
 	sess.log.Info("joined")
+	s.mu.Lock()
+	s.players[sess] = char.Name
+	s.mu.Unlock()
 
 	defer func() {
+		s.mu.Lock()
+		delete(s.players, sess)
+		s.mu.Unlock()
 		data, ok := s.world.Leave(id)
 		if ok {
 			if err := s.store.Save(char.Name, data); err != nil {
@@ -247,12 +330,17 @@ func (s *Server) login(ctx context.Context, sess *session) (account.Character, u
 			status, reason := statusFor(err)
 			return account.Character{}, 0, status, reason
 		}
-		login, ok := pkt.(*proto.Login)
-		if !ok {
+		var char account.Character
+		var created bool
+		switch login := pkt.(type) {
+		case *proto.Login:
+			char, created, err = s.store.Authenticate(login.Name, login.Password, start)
+		case *proto.Resume:
+			// Back after an update: the token stands in for the password, once.
+			char, err = s.store.Resume(login.Token)
+		default:
 			return account.Character{}, 0, websocket.StatusPolicyViolation, "login first"
 		}
-
-		char, created, err := s.store.Authenticate(login.Name, login.Password, start)
 		if err != nil {
 			code := loginCode(err)
 			if code == proto.LoginServerError {
@@ -271,6 +359,18 @@ func (s *Server) login(ctx context.Context, sess *session) (account.Character, u
 		// Join queues EnterMap into the outbox; LoginResult is written
 		// directly below, before writeLoop starts, so it arrives first.
 		id, err := s.world.Join(char.Name, data, sess)
+		if errors.Is(err, world.ErrAlreadyOnline) && s.takeOver(char.Name) {
+			// The old session saved on its way out: carry on from that save.
+			if fresh, loadErr := s.store.Load(char.Name); loadErr == nil {
+				char, data = fresh, fresh.CharData
+				if !s.world.HasMap(data.Map) {
+					data.Map, data.X, data.Y = s.spawn.Map, s.spawn.X, s.spawn.Y
+				}
+				id, err = s.world.Join(char.Name, data, sess)
+			} else {
+				err = loadErr
+			}
+		}
 		if err != nil {
 			code := loginCode(err)
 			if code == proto.LoginServerError {
@@ -336,6 +436,8 @@ func loginCode(err error) uint8 {
 		return proto.LoginInvalidPassword
 	case errors.Is(err, world.ErrAlreadyOnline):
 		return proto.LoginAlreadyOnline
+	case errors.Is(err, account.ErrResumeFailed):
+		return proto.LoginResumeFailed
 	default:
 		return proto.LoginServerError
 	}

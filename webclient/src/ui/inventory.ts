@@ -9,7 +9,9 @@ import { GameWindow } from "./window";
 
 type Tab = "item" | "equip" | "etc";
 
-const tabOf = (item: ItemInfo): Tab => (item.slot ? "equip" : item.type === "healing" ? "item" : "etc");
+/** Items used from the inventory or hotkey bar: potions and wings. */
+const usable = (item: ItemInfo) => item.type === "healing" || item.type === "warp";
+const tabOf = (item: ItemInfo): Tab => (item.slot ? "equip" : usable(item) ? "item" : "etc");
 
 export class InventoryWindow {
   readonly window = new GameWindow("inventory", "Inventory", { x: 16, y: 120, width: 300 });
@@ -82,7 +84,7 @@ export class InventoryWindow {
   private cell(it: InvItem, info: ItemInfo): HTMLElement {
     // Every item can be dragged onto the ground to drop it; healing items also
     // onto the hotkey bar.
-    const drag = JSON.stringify({ kind: "item", id: info.id, index: it.index, amount: it.amount, hotkey: info.type === "healing" });
+    const drag = JSON.stringify({ kind: "item", id: info.id, index: it.index, amount: it.amount, hotkey: usable(info) });
     if (info.slot) {
       return itemCell(info, it.amount, {
         dragData: drag,
@@ -99,7 +101,7 @@ export class InventoryWindow {
         },
       });
     }
-    if (info.type === "healing") {
+    if (usable(info)) {
       return itemCell(info, it.amount, {
         action: "use",
         onActivate: () => this.conn()?.useItem(it.index),

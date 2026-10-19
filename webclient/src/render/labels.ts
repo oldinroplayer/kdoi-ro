@@ -82,7 +82,12 @@ interface Floater {
   el: HTMLElement;
   anchor: () => THREE.Vector3;
   born: number;
+  life: number; // ms
 }
+
+/** How long a multi-hit total shows: a running one until the next blow, the final one longer (RO: 3 s). */
+const COMBO_STEP_LIFE = 450;
+const COMBO_FINAL_LIFE = 3000;
 
 /** How long floating text (damage numbers, LEVEL UP) stays up, in ms. */
 const FLOAT_LIFE = 1200;
@@ -114,13 +119,35 @@ export class FloatingTexts {
     span.textContent = text;
     el.append(span);
     this.root.append(el);
-    this.items.push({ el, anchor, born: performance.now() });
+    this.items.push({ el, anchor, born: performance.now(), life: FLOAT_LIFE });
+  }
+
+  /**
+   * The yellow total RO shows over a monster during a multi-hit attack
+   * (Double Attack, Double Strafe, bolts): it counts up blow by blow, each
+   * running total replacing the last, and the final sum stays a few seconds.
+   * Returns the element so the next blow can replace it.
+   */
+  combo(total: number, anchor: () => THREE.Vector3, final: boolean, replaces?: HTMLElement): HTMLElement {
+    if (replaces) {
+      const i = this.items.findIndex((f) => f.el === replaces);
+      if (i >= 0) this.items.splice(i, 1);
+      replaces.remove();
+    }
+    const el = document.createElement("div");
+    el.className = `floater combo${final ? " final" : ""}`;
+    const span = document.createElement("span");
+    span.textContent = String(total);
+    el.append(span);
+    this.root.append(el);
+    this.items.push({ el, anchor, born: performance.now(), life: final ? COMBO_FINAL_LIFE : COMBO_STEP_LIFE });
+    return el;
   }
 
   update(camera: THREE.Camera, now: number): void {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const f = this.items[i];
-      if (now - f.born > FLOAT_LIFE) {
+      if (now - f.born > f.life) {
         f.el.remove();
         this.items.splice(i, 1);
         continue;

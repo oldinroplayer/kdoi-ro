@@ -15,10 +15,13 @@ const consoleHelp = `Commands:
   who                        list who is online
   exp <name> <base> [job]    give an online character EXP (levels up live)
   zeny <name> <amount>       give an online character zeny (negative takes it away)
+  reset <name> [stats|skills|all]   give an online character back their stat and/or skill points
   warpall <map> <x> <y>      move everyone there: online players now, saved ones at next login
   saveall <map> <x> <y>      set everyone's respawn point there (online and saved)
   exprate [rate]             show or set the monster EXP rate: exprate 2 (or x2, 1.5...)
+  droprate [rate]            show or set the monster drop rate the same way
   chatmode [server|local]    show or set who hears public chat: everyone online, or nearby
+  update                     restart into a new build: players wait and come back by themselves
   help                       show this list`
 
 // runConsole reads admin commands from the server's terminal (stdin) until it
@@ -132,7 +135,7 @@ func consoleCommand(line string, w *world.World, saved relocator) string {
 		return fmt.Sprintf("respawn point set to %s (%d, %d) for %d online players and all %d saved characters", mapName, x, y, online, stored)
 	case "exprate", "rate":
 		if len(f) == 1 {
-			return "EXP rate is " + world.FormatExpRate(w.ExpRate())
+			return "EXP rate is " + world.FormatRate(w.ExpRate())
 		}
 		if len(f) != 2 {
 			return "usage: exprate [rate]"
@@ -144,7 +147,40 @@ func consoleCommand(line string, w *world.World, saved relocator) string {
 		if err := w.SetExpRate(rate); err != nil {
 			return "error: " + err.Error()
 		}
-		return "EXP rate is now " + world.FormatExpRate(w.ExpRate()) + " (until the server restarts; use -exp-rate to keep it)"
+		return "EXP rate is now " + world.FormatRate(w.ExpRate()) + " (until the server restarts; use -exp-rate to keep it)"
+	case "reset":
+		if len(f) < 2 || len(f) > 3 {
+			return "usage: reset <name> [stats|skills|all]"
+		}
+		what := world.ResetAll
+		if len(f) == 3 {
+			what = strings.ToLower(f[2])
+		}
+		summary, err := w.ResetPlayer(f[1], what)
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		return summary
+	case "update":
+		if !requestUpdate() {
+			return "An update restart is already under way."
+		}
+		return fmt.Sprintf("Restarting for an update: players wait up to %ds and rejoin by themselves (needs run.sh to start the new build).", UpdateWaitSeconds)
+	case "droprate":
+		if len(f) == 1 {
+			return "Drop rate is " + world.FormatRate(w.DropRate())
+		}
+		if len(f) != 2 {
+			return "usage: droprate [rate]"
+		}
+		rate, err := strconv.ParseFloat(strings.TrimPrefix(strings.ToLower(f[1]), "x"), 64)
+		if err != nil {
+			return "usage: droprate <rate> (a number like 2, x3 or 1.5)"
+		}
+		if err := w.SetDropRate(rate); err != nil {
+			return "error: " + err.Error()
+		}
+		return "Drop rate is now " + world.FormatRate(w.DropRate()) + " (until the server restarts; use -drop-rate to keep it)"
 	case "chatmode":
 		if len(f) == 1 {
 			return "Chat mode is " + chatModeName(w.ServerChat())

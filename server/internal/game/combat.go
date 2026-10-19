@@ -27,8 +27,8 @@ func hitChance(hit, flee int) int {
 
 // AttackMob resolves a player's melee attack on a monster.
 func (c *CharData) AttackMob(m *MobDef, r Rand) Hit {
-	// No weapon in the item list has an element yet: normal attacks are neutral.
-	return c.attackMob(m, r, 100, 0, 0, ElemNeutral)
+	// Bow shots take their arrows' element; other weapons are neutral for now.
+	return c.attackMob(m, r, 100, 0, 0, c.attackElement())
 }
 
 // attackMob is a physical hit scaled to pct% plus flat damage, with hitBonus

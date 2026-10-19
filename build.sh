@@ -15,6 +15,8 @@
 # Options (after the target):
 #   --os linux --arch amd64    cross-compile the server (e.g. for a VPS)
 #   --link-assets / --copy-assets / --no-assets   override how game files are added
+#   --update                   then switch the running server to the new build: players
+#                              see "updating", wait, and rejoin by themselves
 #
 # Each target keeps its character database in targets/<target>/save/ across builds.
 set -euo pipefail
@@ -24,6 +26,7 @@ TARGETS_DIR="$ROOT/targets"
 GOOS_TARGET="$(go env GOOS)"
 GOARCH_TARGET="$(go env GOARCH)"
 ASSETS_OVERRIDE=""
+UPDATE=""
 TARGETS=()
 
 while [[ $# -gt 0 ]]; do
@@ -35,7 +38,8 @@ while [[ $# -gt 0 ]]; do
     --link-assets) ASSETS_OVERRIDE=link; shift ;;
     --copy-assets) ASSETS_OVERRIDE=copy; shift ;;
     --no-assets) ASSETS_OVERRIDE=none; shift ;;
-    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --update) UPDATE=1; shift ;;
+    -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 1 ;;
   esac
 done
@@ -89,8 +93,10 @@ build_target() {
 
   step "Building the server ($GOOS_TARGET/$GOARCH_TARGET)"
   # Pure Go (the SQLite driver needs no cgo), so cross-compiling just works.
+  # -buildvcs=false: no git stamp (unused), so a git that won't run (e.g. an
+  # unaccepted Xcode license on macOS) can't fail the build.
   (cd "$ROOT/server" && CGO_ENABLED=0 GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" \
-    go build -trimpath -ldflags "$LDFLAGS" -o "$OUT/$BIN" ./cmd/server)
+    go build -trimpath -buildvcs=false -ldflags "$LDFLAGS" -o "$OUT/$BIN" ./cmd/server)
 
   step "Building the web client"
   (
@@ -124,9 +130,16 @@ build_target() {
 #!/usr/bin/env bash
 # Starts KDoiRo ($TARGET): open http://localhost:$PORT (or this machine's address).
 # Set ADDR to listen elsewhere, e.g. ADDR=:8080 ./run.sh
+# When the server exits to update (exit code 75: the console's "update", or
+# ./build.sh $TARGET --update), the new build starts right away.
 cd "\$(dirname "\$0")"
-exec ./$BIN -addr "\${ADDR:-:$PORT}" -web web -data data -bgm bgm \\
-  -db save/kdoiro.db -import-json save/characters.json "\$@"
+while :; do
+  ./$BIN -addr "\${ADDR:-:$PORT}" -web web -data data -bgm bgm \\
+    -db save/kdoiro.db -import-json save/characters.json -pidfile save/server.pid "\$@"
+  code=\$?
+  [[ \$code -eq 75 ]] || exit \$code
+  echo "==> Starting the new build"
+done
 EOF
   chmod +x "$OUT/run.sh"
 
@@ -136,15 +149,19 @@ KDoiRo $VERSION — $TARGET build ($GOOS_TARGET/$GOARCH_TARGET)
 Start:   ./run.sh            then open http://localhost:$PORT
 Port:    ADDR=:8080 ./run.sh
 Other server flags can be added after run.sh (./$BIN -h lists them),
-e.g. ./run.sh -exp-rate 3 to start with x3 EXP.
+e.g. ./run.sh -exp-rate 3 -drop-rate 2 to start with x3 EXP and x2 drops.
 
 While it runs, its terminal takes commands:
   who                       who is online
   exp <name> <base> [job]   give an online player EXP (levels up live)
   zeny <name> <amount>      give an online player zeny (negative takes it away)
+  reset <name> [stats|skills|all]  give an online player back their stat/skill points
   warpall <map> <x> <y>     move everyone there (offline characters at next login)
   saveall <map> <x> <y>     set everyone's respawn point there
+  update                    restart into a newer build (after ./build.sh $TARGET);
+                            players wait and rejoin by themselves
   exprate [rate]            show or set the monster EXP rate (exprate 2 = x2)
+  droprate [rate]           show or set the monster drop rate (droprate 2 = x2)
   chatmode [server|local]   public chat to everyone online, or only nearby
   help                      all commands
 
@@ -161,6 +178,18 @@ anything beyond a local network.
 data/ and bgm/ come from Gravity's Ragnarok Online client: keep this build
 for your own use and don't redistribute those folders.
 EOF
+
+  if [[ -n "$UPDATE" ]]; then
+    local pid=""
+    [[ -f "$OUT/save/server.pid" ]] && pid="$(cat "$OUT/save/server.pid")"
+    # Only a live kdoiro-server: a stale pidfile may name some other process now.
+    if [[ -n "$pid" ]] && [[ "$(ps -o comm= -p "$pid" 2>/dev/null)" == *kdoiro-server ]]; then
+      step "Switching the running server (pid $pid) to the new build"
+      kill -USR1 "$pid"
+    else
+      step "No running $TARGET server to update; start it with targets/$TARGET/run.sh"
+    fi
+  fi
 
   step "Done: targets/$TARGET"
   du -sh "$OUT"/* 2>/dev/null | sed 's|'"$OUT"'/|  |'

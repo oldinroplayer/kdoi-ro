@@ -98,6 +98,11 @@ var migrations = []string{
 		name     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
 		PRIMARY KEY (party_id, position)
 	);`,
+	`CREATE TABLE resume_tokens (
+		token_hash TEXT    PRIMARY KEY, -- SHA-256 of the token, hex
+		name       TEXT    NOT NULL COLLATE NOCASE,
+		expires    INTEGER NOT NULL      -- Unix seconds
+	);`,
 }
 
 // Open opens (creating if needed) the database at path and brings its schema

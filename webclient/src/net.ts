@@ -8,7 +8,11 @@ export const LoginCode = {
   InvalidPassword: 4,
   AlreadyOnline: 5,
   ServerError: 6,
+  ResumeFailed: 7,
 } as const;
+
+/** WebSocket close code: the server is restarting for an update. */
+export const CLOSE_UPDATING = 4000;
 
 export const loginMessages: Record<number, string> = {
   [LoginCode.WrongPassword]: "Wrong password for that character.",
@@ -16,6 +20,7 @@ export const loginMessages: Record<number, string> = {
   [LoginCode.InvalidPassword]: "Passwords are 4–72 characters.",
   [LoginCode.AlreadyOnline]: "That character is already online.",
   [LoginCode.ServerError]: "Server error, try again.",
+  [LoginCode.ResumeFailed]: "Your session after the update expired. Please log in again.",
 };
 
 export type ServerPacket =
@@ -78,6 +83,8 @@ export type ServerPacket =
   | { type: "inventory"; items: InvItem[] }
   | { type: "status"; status: Status }
   | { type: "message"; text: string }
+  /** The server is restarting for an update: wait up to `wait` seconds, then resume with the token. */
+  | { type: "serverUpdating"; wait: number; token: string }
   /** kind 0: said out loud nearby; 1: said in our chat room. */
   | { type: "chat"; id: number; kind: number; name: string; text: string }
   | { type: "whisperFrom"; from: string; text: string }
@@ -102,7 +109,9 @@ export type ServerPacket =
   | { type: "partyInvited"; partyId: number; partyName: string; from: string }
   | { type: "partyLeft" }
   /** A unit's new walk speed (ms per straight cell), e.g. under Increase AGI. */
-  | { type: "speed"; id: number; speed: number };
+  | { type: "speed"; id: number; speed: number }
+  /** A one-off effect on a unit (kind 1: teleporting away with a wing). */
+  | { type: "effect"; id: number; kind: number };
 
 /** A party member as the party window shows it (offline: name only). */
 export interface PartyMember {
@@ -288,6 +297,10 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
       return { type: "floorItemGone", id: u32() };
     case 0x802d:
       return { type: "speed", id: u32(), speed: u16() };
+    case 0x802e:
+      return { type: "serverUpdating", wait: u16(), token: str() };
+    case 0x802f:
+      return { type: "effect", id: u32(), kind: u8() };
     case 0x802a: {
       const id = u32(), name = str(), leader = str(), evenExp = u8() === 1, n = u8();
       const members: PartyMember[] = [];
@@ -380,7 +393,7 @@ function decode(buf: ArrayBuffer): ServerPacket | null {
 export class Connection {
   private ws: WebSocket | null = null;
   onPacket: (p: ServerPacket) => void = () => {};
-  onClose: (reason: string) => void = () => {};
+  onClose: (reason: string, code: number) => void = () => {};
 
   connect(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -396,7 +409,7 @@ export class Connection {
       };
       ws.onclose = (e) => {
         this.ws = null;
-        if (opened) this.onClose(e.reason || "Disconnected from server.");
+        if (opened) this.onClose(e.reason || "Disconnected from server.", e.code);
       };
       ws.onmessage = (e) => {
         if (!(e.data instanceof ArrayBuffer)) return;
@@ -430,6 +443,11 @@ export class Connection {
     b[3 + n.length] = p.length;
     b.set(p, 4 + n.length);
     this.ws?.send(b);
+  }
+
+  /** Logs back in after a server update with the token it handed out. */
+  resume(token: string): void {
+    this.sendFields(0x0024, [token]);
   }
 
   npcClick(npcId: number): void {

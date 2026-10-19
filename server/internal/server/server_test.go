@@ -68,6 +68,13 @@ func init() {
 // with a warp at morocc (15,10) to field (5,5) and back at field (2,2) to morocc (12,10).
 func startServer(t *testing.T) (string, *account.Store) {
 	t.Helper()
+	url, store, _ := startTestServer(t)
+	return url, store
+}
+
+// startTestServer is startServer that also returns the Server itself.
+func startTestServer(t *testing.T) (string, *account.Store, *Server) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -113,7 +120,7 @@ func startServer(t *testing.T) (string, *account.Store) {
 	})
 	hs := httptest.NewServer(srv)
 	t.Cleanup(hs.Close)
-	return "ws" + strings.TrimPrefix(hs.URL, "http"), store
+	return "ws" + strings.TrimPrefix(hs.URL, "http"), store, srv
 }
 
 type client struct {
@@ -226,12 +233,11 @@ func TestLoginCreateMoveAndLeave(t *testing.T) {
 		t.Fatal("alice should see bob")
 	}
 
-	// A second Alice: wrong password, then right password while online.
+	// A second Alice with the wrong password is turned away (the right one
+	// takes over the session: see TestLoginReplacesOnlineSession).
 	imposter := dial(t, url)
 	imposter.login("alice", "wrongpass")
 	imposter.expectLogin(proto.LoginWrongPassword)
-	imposter.login("alice", "pass1234")
-	imposter.expectLogin(proto.LoginAlreadyOnline)
 	imposter.conn.Close(websocket.StatusNormalClosure, "")
 
 	alice.send(proto.NewPacket(proto.OpMove).U16(12).U16(10).Bytes())

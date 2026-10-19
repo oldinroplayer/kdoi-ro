@@ -216,7 +216,8 @@ func (w *World) killMonster(mob *Monster, now time.Time) {
 // dropLoot rolls a monster's drops onto the ground around its corpse.
 func (w *World) dropLoot(mob *Monster, owner uint32, now time.Time) {
 	for _, d := range mob.def.Drops {
-		if w.rng.IntN(10000) < d.Rate {
+		// Rate is out of 10000; the server's drop rate scales it (x2 doubles it).
+		if w.rng.IntN(10000) < min(d.Rate*w.dropRate/100, 10000) {
 			w.dropItem(mob.m, mob.x, mob.y, d.ItemID, 1, owner, now)
 		}
 	}

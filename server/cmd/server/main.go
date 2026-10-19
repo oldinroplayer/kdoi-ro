@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,15 +38,31 @@ func main() {
 	webDir := flag.String("web", "", "built web client to serve at / (with -data at /data and -bgm at /bgm); empty = API only")
 	bgmDir := flag.String("bgm", "", "BGM folder served at /bgm when -web is set")
 	expRate := flag.Float64("exp-rate", 1, "monster EXP multiplier (2 = x2); the console's exprate changes it live")
+	dropRate := flag.Float64("drop-rate", 1, "monster drop chance multiplier (2 = x2); the console's droprate changes it live")
+	pidFile := flag.String("pidfile", "", "write the process ID here (for ./build.sh dev --update to signal it)")
 	flag.Parse()
 
-	if err := run(*addr, *dataDir, *mapList, *dbPath, *importJSON, *origins, *webDir, *bgmDir, *expRate); err != nil {
+	if *pidFile != "" {
+		if err := os.WriteFile(*pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+			slog.Error("writing pidfile", "err", err)
+		} else {
+			defer os.Remove(*pidFile)
+		}
+	}
+	err := run(*addr, *dataDir, *mapList, *dbPath, *importJSON, *origins, *webDir, *bgmDir, *expRate, *dropRate)
+	if errors.Is(err, errUpdating) {
+		if *pidFile != "" {
+			os.Remove(*pidFile) // os.Exit skips deferred calls
+		}
+		os.Exit(ExitUpdate)
+	}
+	if err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir string, expRate float64) error {
+func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir string, expRate, dropRate float64) error {
 	maps := map[string]*gat.Map{}
 	for _, name := range strings.Split(mapList, ",") {
 		name = strings.TrimSpace(name)
@@ -79,8 +96,18 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 		}
 	}
 
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// SIGHUP too: closing the terminal window shuts down cleanly, like Ctrl-C.
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
+	// SIGUSR1 restarts for an update, like the console's "update".
+	usr1 := make(chan os.Signal, 1)
+	signal.Notify(usr1, syscall.SIGUSR1)
+	defer signal.Stop(usr1)
+	go func() {
+		for range usr1 {
+			requestUpdate()
+		}
+	}()
 
 	// From the November 2004 eAthena warps (reference/eathena-2004/npc/warps/):
 	// cities/morroc.txt and fields/morroc_fild.txt.
@@ -166,6 +193,7 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 		Spawns:     spawns,
 		SavePoint:  world.Location{Map: spawn.Map, X: spawn.X, Y: spawn.Y},
 		ExpRate:    expRate,
+		DropRate:   dropRate,
 	})
 	if err != nil {
 		return err
@@ -182,6 +210,13 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /items.json", serveItems)
 	mux.HandleFunc("GET /skills.json", serveSkills)
+	// Players online and the rates, for the login screen.
+	mux.HandleFunc("GET /status.json", func(rw http.ResponseWriter, _ *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Header().Set("Access-Control-Allow-Origin", "*") // public, read-only
+		rw.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(rw).Encode(w.Stats())
+	})
 	if webDir != "" {
 		if err := mountWeb(mux, webDir, dataDir, bgmDir); err != nil {
 			endSessions()
@@ -196,25 +231,57 @@ func run(addr, dataDir, mapList, dbPath, importJSON, origins, webDir, bgmDir str
 	go runConsole(os.Stdin, os.Stdout, w, store)
 	slog.Info("listening", "addr", addr, "ws", "/ws")
 
+	updating := false
 	select {
 	case err := <-errCh:
 		endSessions()
 		stopWorld()
 		return err
 	case <-sigCtx.Done():
+	case <-updateRequests:
+		updating = true
 	}
 
 	// Shut down in order: stop accepting, end sessions (each saves its
 	// character via the world), then stop the world.
-	slog.Info("shutting down")
+	slog.Info("shutting down", "update", updating)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	httpSrv.Shutdown(shutdownCtx)
+	// Every clean shutdown lets players resume: they get a token and wait up
+	// to UpdateWaitSeconds for a server to come back (run.sh starts the new
+	// build at once after an update; after Ctrl-C, start it again in time).
+	srv.BeginUpdate(UpdateWaitSeconds)
 	endSessions()
 	srv.Wait()
 	stopWorld()
 	<-worldDone
+	if updating {
+		return errUpdating
+	}
 	return nil
+}
+
+// Restarting for an update: the server exits with ExitUpdate (EX_TEMPFAIL)
+// and run.sh starts the new build; players wait up to UpdateWaitSeconds.
+const (
+	ExitUpdate        = 75
+	UpdateWaitSeconds = 30
+)
+
+var errUpdating = errors.New("restarting for an update")
+
+// updateRequests asks the running server to restart for an update.
+var updateRequests = make(chan struct{}, 1)
+
+// requestUpdate starts an update restart (repeat requests are ignored).
+func requestUpdate() bool {
+	select {
+	case updateRequests <- struct{}{}:
+		return true
+	default:
+		return false
+	}
 }
 
 // serveItems publishes the item database (stats, slots, prices) for clients.

@@ -29,16 +29,28 @@ func (w *World) ClickNpc(id, npcID uint32) error {
 		case KindWarper:
 			w.warperTalk(p, n)
 			return
+		case KindReset:
+			w.resetTalk(p, n)
+			return
 		}
 		if len(n.Shop) == 0 {
 			return
 		}
 		items := make([]proto.ShopItem, len(n.Shop))
 		for i, itemID := range n.Shop {
-			items[i] = proto.ShopItem{ItemID: itemID, Price: p.data.BuyPrice(game.Items[itemID].Price)}
+			items[i] = proto.ShopItem{ItemID: itemID, Price: n.priceFor(p, itemID)}
 		}
 		p.out.Send(proto.ShopOpen(n.ID, n.Name, items, p.data.SellRate()))
 	})
+}
+
+// priceFor is what a player pays for one of a shop's items: the NPC's fixed
+// price if it has one, else the database price (less the player's Discount).
+func (n *NPC) priceFor(p *Player, itemID int) int {
+	if n.Price > 0 {
+		return n.Price
+	}
+	return p.data.BuyPrice(game.Items[itemID].Price)
 }
 
 // shopPlayer returns the player if it's alive and near a shop NPC.
@@ -72,7 +84,7 @@ func (w *World) Buy(id, npcID uint32, lines []proto.ShopLine) error {
 		err := p.data.Buy(order, func(itemID int) (int, bool) {
 			for _, sold := range n.Shop {
 				if sold == itemID {
-					return p.data.BuyPrice(game.Items[itemID].Price), true
+					return n.priceFor(p, itemID), true
 				}
 			}
 			return 0, false

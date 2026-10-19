@@ -67,6 +67,8 @@ type Config struct {
 	Seed uint64
 	// ExpRate multiplies the EXP monsters give (2 = "x2"); 0 means x1.
 	ExpRate float64
+	// DropRate multiplies monsters' drop chances (2 = "x2"); 0 means x1.
+	DropRate float64
 	// Parties saved from earlier runs, and where to save changes (nil: don't).
 	Parties    []PartyRecord
 	PartyStore PartyStore
@@ -137,7 +139,8 @@ type NPC struct {
 	X, Y   int
 	Dir    uint8
 	Shop   []int      // item IDs, sold at their database price
-	Kind   string     // KindShop (default), KindJobChange, KindKafra or KindWarper
+	Price  int        // when set, every item in Shop costs this many zeny instead
+	Kind   string     // KindShop (default), KindJobChange, KindKafra, KindWarper or KindReset
 	Kafra  *Kafra     // for KindKafra
 	Warps  []Teleport // for KindWarper
 }
@@ -159,8 +162,9 @@ type World struct {
 	savePoint       Location
 	rng             *rand.Rand
 	respawns        []respawn
-	// expRate is the monster EXP multiplier in percent (100 = x1).
-	expRate int
+	// expRate and dropRate are the monster EXP and drop chance multipliers
+	// in percent (100 = x1).
+	expRate, dropRate int
 	// serverChat sends public chat to every player online instead of only
 	// those nearby (the console's chatmode).
 	serverChat bool
@@ -203,15 +207,20 @@ func New(cfg Config) (*World, error) {
 	if _, ok := w.maps[cfg.SavePoint.Map]; !ok {
 		return nil, fmt.Errorf("save point map %q not loaded", cfg.SavePoint.Map)
 	}
-	rate := cfg.ExpRate
-	if rate == 0 {
-		rate = 1
+	for _, r := range []struct {
+		what string
+		rate float64
+		into *int
+	}{{"EXP", cfg.ExpRate, &w.expRate}, {"drop", cfg.DropRate, &w.dropRate}} {
+		if r.rate == 0 {
+			r.rate = 1
+		}
+		pct, err := ratePercent(r.what, r.rate)
+		if err != nil {
+			return nil, err
+		}
+		*r.into = pct
 	}
-	pct, err := expRatePercent(rate)
-	if err != nil {
-		return nil, err
-	}
-	w.expRate = pct
 	for _, rec := range cfg.Parties {
 		pt := &party{PartyRecord: rec}
 		w.parties[rec.ID] = pt

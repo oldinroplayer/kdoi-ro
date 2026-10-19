@@ -1,4 +1,4 @@
-// Hotkey bar (F1–F9): drop skills and healing items here and press the key
+// Hotkey bar (F1–F9): drop skills, healing items and wings here and press the key
 // (or click the slot) to use them. Slots are remembered per character in this
 // browser; drag a slot off the bar or right-click it to clear it.
 import { itemIcon } from "../items";
@@ -123,7 +123,7 @@ export class Hotbar {
       b.append(key);
       b.classList.toggle("empty", !slot);
       b.classList.remove("used-up");
-      let label = `F${i + 1}: empty — drag a skill or healing item here`;
+      let label = `F${i + 1}: empty — drag a skill, potion or wing here`;
       const img = document.createElement("img");
       img.alt = "";
       img.width = img.height = 24;

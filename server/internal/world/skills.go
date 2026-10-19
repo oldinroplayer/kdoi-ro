@@ -99,6 +99,11 @@ func (w *World) startSkill(p *Player, skillID, level int, targetID uint32, now t
 	if !def.UsableWith(p.data.Derive().WeaponType) {
 		return errWrongWeapon
 	}
+	if shootsArrow(p, def) {
+		if _, _, ok := p.data.Arrow(); !ok {
+			return game.ErrNoArrows
+		}
+	}
 	if p.data.Zeny < def.SkillZeny(level) {
 		return errNoZeny
 	}
@@ -249,6 +254,9 @@ func (w *World) finishSkill(p *Player, c *cast, now time.Time) {
 	// gets hit (RO is lenient too); one that's gone or far away doesn't.
 	if !ok || chebyshev(p.x, p.y, x, y) > skillReach(def, p.data.Derive().Range)+2 {
 		p.out.Send(proto.Message(skillMessage(errBadTarget)))
+		return
+	}
+	if shootsArrow(p, def) && !w.useArrow(p) {
 		return
 	}
 	p.data.SP -= sp
@@ -457,6 +465,8 @@ func skillMessage(err error) string {
 		return "You can't use skills right now."
 	case errors.Is(err, errWrongWeapon):
 		return "You need a different weapon for that skill."
+	case errors.Is(err, game.ErrNoArrows):
+		return arrowsMessage
 	case errors.Is(err, errNoZeny):
 		return "Not enough zeny."
 	case errors.Is(err, errBadTarget):

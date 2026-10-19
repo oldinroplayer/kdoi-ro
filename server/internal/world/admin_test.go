@@ -105,3 +105,26 @@ func TestSaveAll(t *testing.T) {
 		t.Fatalf("save point after saveall: %+v", data.Save)
 	}
 }
+
+func TestResetPlayer(t *testing.T) {
+	w, err := New(Config{Maps: map[string]*gat.Map{"town": openMap(t, 10, 10)}, SavePoint: Location{Map: "town", X: 1, Y: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.Run(ctx)
+	data := game.NewChar("town", 5, 5)
+	data.Stats[game.STR], data.StatusPoints = 9, 0
+	data.Skills[game.SkillBasic], data.SkillPoints = 5, 0
+	if _, err := w.Join("Hero", data, discard{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := w.ResetPlayer("hero", "all")
+	if want := fmt.Sprintf("Hero: %d status points and 5 skill points to spend.", game.TotalStatusPoints(1)); err != nil || got != want {
+		t.Fatalf("reset: %q %v, want %q", got, err, want)
+	}
+	if _, err := w.ResetPlayer("Ghost", "stats"); !errors.Is(err, ErrNotOnline) {
+		t.Fatalf("offline character: %v", err)
+	}
+}

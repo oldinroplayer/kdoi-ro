@@ -141,3 +141,60 @@ func (w *World) savePointOf(c *game.CharData) Location {
 	}
 	return w.savePoint
 }
+
+// itemAt is the definition of the inventory item at index.
+func itemAt(c *game.CharData, index int) (game.ItemDef, bool) {
+	for _, it := range c.Inventory {
+		if it.Index == index {
+			return game.Items[it.ItemID], true
+		}
+	}
+	return game.ItemDef{}, false
+}
+
+// useWing spends a Fly Wing (a random spot on this map) or Butterfly Wing
+// (the save point) and teleports the player there.
+func (w *World) useWing(p *Player, index int) {
+	if p.room != nil {
+		p.out.Send(proto.Message("Leave the chat room first."))
+		return
+	}
+	// Where to first, so a wing that can't go anywhere isn't spent.
+	def, _ := itemAt(&p.data, index)
+	to := w.savePointOf(&p.data)
+	if def.Warp == game.WarpRandom {
+		x, y, ok := w.randomCell(p.m)
+		if !ok {
+			p.out.Send(proto.Message("Nowhere to fly to."))
+			return
+		}
+		to = Location{Map: p.m.name, X: x, Y: y}
+	}
+	if _, err := p.data.UseWarpItem(index); err != nil {
+		p.out.Send(proto.Message(messageFor(err)))
+		return
+	}
+	w.broadcast(p.m, proto.Effect(p.id, proto.EffectTeleport))
+	p.target, p.pending, p.pickup = 0, nil, 0
+	w.cancelCast(p)
+	w.removeFromMap(p)
+	w.place(p, w.maps[to.Map], to.X, to.Y)
+	w.sendInventory(p)
+	w.sendStatus(p)
+}
+
+// randomCell picks a random walkable cell on a map that isn't on a warp
+// portal, like RO's random teleport.
+func (w *World) randomCell(m *mapInstance) (x, y int, ok bool) {
+	for range 1000 {
+		x, y = w.rng.IntN(m.grid.Width), w.rng.IntN(m.grid.Height)
+		if !m.grid.Walkable(x, y) {
+			continue
+		}
+		if _, onWarp := m.warpAt(x, y); onWarp {
+			continue
+		}
+		return x, y, true
+	}
+	return 0, 0, false
+}

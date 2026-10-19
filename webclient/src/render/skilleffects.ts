@@ -309,7 +309,7 @@ export class LightColumn implements Effect {
  * RO's rising light cylinder: a ring texture (texture/effect/ring_*.tga, a
  * strip of light streaks, solid at the bottom and spiky at the top) wrapped
  * around the unit. It shoots up, turns, and fades. Two layers turning opposite
- * ways give the streaks depth. Used for Increase AGI with ring_blue.
+ * ways give the streaks depth. Teleporting (wings) uses it with ring_blue.
  */
 export class RingCylinder implements Effect {
   readonly object = new THREE.Group();

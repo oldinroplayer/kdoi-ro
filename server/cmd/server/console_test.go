@@ -33,6 +33,9 @@ func TestConsoleCommands(t *testing.T) {
 		"zeny Nobody 100":     "error: Nobody is not online",
 		"zeny Someone":        "usage: zeny",
 		"zeny Someone lots":   "usage: zeny",
+		"reset Nobody":        "error: Nobody is not online",
+		"reset Nobody luck":   "error: reset what?",
+		"reset":               "usage: reset",
 		"warpall nowhere 1 1": "error: map \"nowhere\" isn't loaded",
 		"warpall town 50 50":  "error: (50, 50) is outside town",
 		"warpall town 1":      "usage: warpall",
@@ -55,15 +58,25 @@ func TestConsoleCommands(t *testing.T) {
 		{"exprate 0", "error: EXP rate must be above 0"},
 		{"exprate lots", "usage: exprate"},
 		{"rate 5", "EXP rate is now x5 "},
+		{"droprate", "Drop rate is x1"},
+		{"droprate x3", "Drop rate is now x3 "},
+		{"droprate 0", "error: drop rate must be above 0"},
 		{"chatmode", "Chat mode is local"},
 		{"chatmode server", "Chat mode is now server"},
 		{"chatmode", "Chat mode is server"},
 		{"chatmode local", "Chat mode is now local"},
 		{"chatmode loud", "usage: chatmode"},
+		{"update", "Restarting for an update"},
+		{"update", "An update restart is already under way."},
 	} {
 		if got := consoleCommand(c.line, w, &fakeSaved{}); !strings.HasPrefix(got, c.want) {
 			t.Errorf("%q -> %q, want prefix %q", c.line, got, c.want)
 		}
+	}
+	select {
+	case <-updateRequests: // the update was asked for; take it back
+	default:
+		t.Error("update didn't request a restart")
 	}
 }
 

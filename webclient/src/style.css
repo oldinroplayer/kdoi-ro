@@ -96,6 +96,51 @@ details summary {
   margin-bottom: 6px;
 }
 
+/* Login screen: is the server up, how many are playing, and its rates. */
+.server-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 10px;
+  border: 1px solid rgba(138, 109, 59, 0.35);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+}
+
+.server-stats .stat-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.server-stats .stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.server-stats.online .stat-dot {
+  background: #6fd87a;
+  box-shadow: 0 0 6px rgba(111, 216, 122, 0.7);
+}
+
+.server-stats.offline .stat-dot {
+  background: var(--error);
+}
+
+.server-stats .stat-label {
+  color: var(--muted);
+}
+
+.server-stats strong {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
 #login-error {
   margin: 0;
   min-height: 1.4em;
@@ -987,6 +1032,15 @@ button.item-cell:focus-visible {
   text-align: right;
 }
 
+/* The arrow slot sits centred under the two columns. */
+.equip-ammo {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(138, 109, 59, 0.35);
+}
+
 .equip-name {
   font-size: 12px;
   overflow: hidden;
@@ -1295,6 +1349,47 @@ button.item-cell:focus-visible {
   padding: 22px 26px;
   background: var(--crit-burst, none) center / contain no-repeat;
   image-rendering: pixelated;
+}
+
+/* A multi-hit attack's running total (RO's yellow combo damage): bigger,
+   held over the monster's head instead of flying off. */
+.floater.combo span {
+  color: #e6e626;
+  font-size: 24px;
+  animation: combo-pop 0.45s ease-out forwards;
+}
+
+.floater.combo.final span {
+  animation: combo-pop 0.45s ease-out forwards, combo-hold 3s linear forwards;
+}
+
+@keyframes combo-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* The final total drifts up a little and fades out at the end. */
+@keyframes combo-hold {
+  0% {
+    translate: 0 0;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    translate: 0 -8px;
+    opacity: 0;
+  }
 }
 
 .floater.miss span {
@@ -1655,4 +1750,79 @@ button.item-cell:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
   outline: none;
+}
+
+/* Server update: covers the game while the server restarts into a new build. */
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(8, 7, 10, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.update-overlay[hidden] {
+  display: none;
+}
+
+.update-box {
+  width: min(380px, 100%);
+  padding: 22px 24px;
+  border: 1px solid var(--border, rgba(217, 164, 65, 0.4));
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.update-box h2 {
+  margin: 10px 0 6px;
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.update-box p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.update-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto;
+  border: 3px solid rgba(217, 164, 65, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: update-spin 0.9s linear infinite;
+}
+
+.update-overlay.stuck .update-spinner {
+  display: none;
+}
+
+.update-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.update-actions:empty {
+  display: none;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-spinner {
+    animation-duration: 3s;
+  }
 }
